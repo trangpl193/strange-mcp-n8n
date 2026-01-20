@@ -10,11 +10,13 @@ import {
   workflowList,
   workflowCreate,
   workflowGet,
+  workflowUpdate,
   executionList,
   executionDebug,
   type WorkflowListInput,
   type WorkflowCreateInput,
   type WorkflowGetInput,
+  type WorkflowUpdateInput,
   type ExecutionListInput,
   type ExecutionDebugInput,
 } from './tools/index.js';
@@ -169,6 +171,54 @@ export class N8NMCPServer {
           },
         },
         {
+          name: 'workflow_update',
+          description: 'Update existing N8N workflow. Supports three strategies: (1) Full replacement with simplified schema, (2) Direct N8N JSON update, (3) Quick operations (activate, rename, tags).',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              workflow_id: {
+                type: 'string',
+                description: 'Workflow ID to update',
+              },
+              workflow: {
+                type: 'object',
+                description: 'Full replacement with simplified schema (Strategy 1)',
+              },
+              credentials: {
+                type: 'object',
+                description: 'Credential name → ID mapping for Strategy 1',
+              },
+              workflow_json: {
+                type: 'object',
+                description: 'Direct N8N JSON update (Strategy 2, advanced)',
+              },
+              activate: {
+                type: 'boolean',
+                description: 'Quick operation: Activate/deactivate workflow (Strategy 3)',
+              },
+              rename: {
+                type: 'string',
+                description: 'Quick operation: Rename workflow (Strategy 3)',
+              },
+              add_tags: {
+                type: 'array',
+                description: 'Quick operation: Add tags (Strategy 3)',
+                items: {
+                  type: 'string',
+                },
+              },
+              remove_tags: {
+                type: 'array',
+                description: 'Quick operation: Remove tags (Strategy 3)',
+                items: {
+                  type: 'string',
+                },
+              },
+            },
+            required: ['workflow_id'],
+          },
+        },
+        {
           name: 'execution_list',
           description: 'List workflow executions with filtering. Returns execution summaries with status and duration.',
           inputSchema: {
@@ -253,6 +303,19 @@ export class N8NMCPServer {
           case 'workflow_get': {
             const input = args as WorkflowGetInput;
             const result = await workflowGet(this.client, input);
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(result, null, 2),
+                },
+              ],
+            };
+          }
+
+          case 'workflow_update': {
+            const input = args as WorkflowUpdateInput;
+            const result = await workflowUpdate(this.client, input);
             return {
               content: [
                 {

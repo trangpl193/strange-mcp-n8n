@@ -19,6 +19,12 @@ export type {
   WorkflowConnectionDetail,
 } from './workflow-get.js';
 
+export { workflowUpdate } from './workflow-update.js';
+export type {
+  WorkflowUpdateInput,
+  WorkflowUpdateOutput,
+} from './workflow-update.js';
+
 export { executionList } from './execution-list.js';
 export type {
   ExecutionListInput,

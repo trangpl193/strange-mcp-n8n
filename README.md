@@ -53,7 +53,7 @@ Add to your MCP client config (e.g., Claude Code):
 }
 ```
 
-### Available Tools (5 total)
+### Available Tools (6 total)
 
 #### 1. workflow_list ✅
 List N8N workflows with filtering.
@@ -64,10 +64,13 @@ Create N8N workflow from simplified schema.
 #### 3. workflow_get ✅
 Get workflow details by ID.
 
-#### 4. execution_list ✅
+#### 4. workflow_update ✅
+Update existing N8N workflow (3 strategies: full replacement, direct JSON, quick operations).
+
+#### 5. execution_list ✅
 List workflow executions with filtering.
 
-#### 5. execution_debug ✅
+#### 6. execution_debug ✅
 Get detailed execution debug information.
 
 See full API documentation below.
@@ -155,6 +158,62 @@ See full API documentation below.
 }
 ```
 
+### workflow_update
+
+Update existing workflow using one of three strategies:
+
+**Strategy 1: Full replacement with simplified schema**
+```json
+{
+  "workflow_id": "wf-123",
+  "workflow": {
+    "name": "Updated Export Figma Variables",
+    "steps": [...]
+  },
+  "credentials": {
+    "prod-db": "cred-12345"
+  }
+}
+```
+
+**Strategy 2: Direct N8N JSON update (advanced)**
+```json
+{
+  "workflow_id": "wf-123",
+  "workflow_json": {
+    "name": "Updated Name",
+    "nodes": [...],
+    "connections": {...}
+  }
+}
+```
+
+**Strategy 3: Quick operations**
+```json
+{
+  "workflow_id": "wf-123",
+  "activate": true,
+  "rename": "New Name",
+  "add_tags": ["production", "v2"],
+  "remove_tags": ["staging"]
+}
+```
+
+**Output:**
+```json
+{
+  "workflow_id": "wf-123",
+  "name": "Updated Export Figma Variables",
+  "active": true,
+  "nodes_count": 4,
+  "updated_at": "2026-01-20T15:00:00Z",
+  "meta": {
+    "execution_time_ms": 320,
+    "rows_affected": 1
+  }
+}
+```
+
 ### execution_debug
 
 **Input:**
@@ -217,6 +276,14 @@ npm run typecheck  # Type checking
 
 ## Version History
 
+### v1.2.0 (2026-01-20)
+- ✅ Phase 4: Workflow update loop
+- ✅ workflow_update - Three update strategies
+- ✅ Strategy 1: Full replacement with simplified schema
+- ✅ Strategy 2: Direct N8N JSON update
+- ✅ Strategy 3: Quick operations (activate, rename, tags)
+- Bundle size: 30.40 KB
+
 ### v1.1.0 (2026-01-20)
 - ✅ Phase 3: Execution debugging tools
 - ✅ execution_list - Filter and list executions
@@ -234,7 +301,7 @@ npm run typecheck  # Type checking
 - [x] Phase 1: Foundation (workflow_list)
 - [x] Phase 2: Transform Layer (workflow_create, workflow_get)
 - [x] Phase 3: Debugging (execution_list, execution_debug)
-- [ ] Phase 4: Update Loop (workflow_update)
+- [x] Phase 4: Update Loop (workflow_update)
 - [ ] Phase 5: Deployment (Docker, Cloudflare)
 
 ## License
