@@ -49,7 +49,7 @@ Add to your MCP client config (e.g., Claude Code):
 
 ### Available Tools (Phase 1)
 
-#### workflow_list
+#### workflow_list ✅
 
 List workflows with filtering.
 
@@ -63,7 +63,9 @@ List workflows with filtering.
 }
 ```
 
-#### credential_list
+**Status**: Working - Tested with N8N instance
+
+#### credential_list ⚠️
 
 List available credentials.
 
@@ -72,6 +74,10 @@ List available credentials.
   type?: string
 }
 ```
+
+**Status**: Not supported by N8N Public API (GET method not allowed on `/api/v1/credentials`)
+
+**Note**: Tool skeleton implemented for future N8N API support. Currently returns error.
 
 ## Development
 
