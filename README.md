@@ -65,19 +65,7 @@ List workflows with filtering.
 
 **Status**: Working - Tested with N8N instance
 
-#### credential_list ⚠️
-
-List available credentials.
-
-```typescript
-{
-  type?: string
-}
-```
-
-**Status**: Not supported by N8N Public API (GET method not allowed on `/api/v1/credentials`)
-
-**Note**: Tool skeleton implemented for future N8N API support. Currently returns error.
+**Note**: `credential_list` tool removed - N8N Public API does not support listing credentials (no GET endpoint available).
 
 ## Development
 

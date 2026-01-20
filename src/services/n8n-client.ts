@@ -240,24 +240,4 @@ export class N8NClient {
     );
   }
 
-  /**
-   * List credentials
-   */
-  async listCredentials(params?: {
-    type?: string;
-  }): Promise<N8NCredential[]> {
-    const queryParams: Record<string, string> = {};
-
-    if (params?.type) {
-      queryParams.type = params.type;
-    }
-
-    // N8N credentials endpoint returns array directly, not wrapped
-    return this.request<N8NCredential[]>(
-      'GET',
-      '/api/v1/credentials',
-      undefined,
-      queryParams
-    );
-  }
 }

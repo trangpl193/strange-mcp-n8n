@@ -8,9 +8,7 @@ import { N8NClient } from './services/index.js';
 import { loadConfig } from './config.js';
 import {
   workflowList,
-  credentialList,
   type WorkflowListInput,
-  type CredentialListInput,
 } from './tools/index.js';
 
 /**
@@ -81,19 +79,6 @@ export class N8NMCPServer {
             },
           },
         },
-        {
-          name: 'credential_list',
-          description: 'List available N8N credentials. Returns credential ID, name, and type for use in workflow configuration.',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              type: {
-                type: 'string',
-                description: 'Filter by credential type (e.g., "postgres", "discord")',
-              },
-            },
-          },
-        },
       ],
     }));
 
@@ -106,19 +91,6 @@ export class N8NMCPServer {
           case 'workflow_list': {
             const input = args as WorkflowListInput;
             const result = await workflowList(this.client, input);
-            return {
-              content: [
-                {
-                  type: 'text',
-                  text: JSON.stringify(result, null, 2),
-                },
-              ],
-            };
-          }
-
-          case 'credential_list': {
-            const input = args as CredentialListInput;
-            const result = await credentialList(this.client, input);
             return {
               content: [
                 {
