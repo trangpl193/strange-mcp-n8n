@@ -16,6 +16,7 @@ import { z } from 'zod';
 import { createApiKeyMiddleware, SessionCleanup } from '@strange/mcp-core';
 import { N8NClient } from './services/index.js';
 import { initSessionStore, getSessionStoreType } from './services/session-store-factory.js';
+import { initializeSchemas, detectAPI } from './schema/index.js';
 import {
   workflowList,
   workflowCreate,
@@ -626,6 +627,10 @@ export async function startServer(config: N8NMcpServerConfig): Promise<void> {
 
   const httpPort = config.httpPort || 3302;
   const httpHost = config.httpHost || '0.0.0.0';
+
+  // Initialize canonical schema system (Phase 3)
+  initializeSchemas();
+  console.log(`🎯 Target API detected: ${detectAPI()}`);
 
   // Initialize session store (Redis or In-Memory based on REDIS_URL)
   await initSessionStore();
