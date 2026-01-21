@@ -1,4 +1,4 @@
-import { McpError, ErrorContext } from '@strange/mcp-core';
+import { McpError, McpErrorCode, errorContext } from '@strange/mcp-core';
 import type {
   N8NWorkflow,
   N8NExecution,
@@ -7,6 +7,75 @@ import type {
   N8NListResponse,
   N8NErrorResponse,
 } from '../types.js';
+
+/**
+ * N8N-specific recovery hints for AI agents
+ */
+const N8N_RECOVERY_HINTS = {
+  // Workflow errors
+  WORKFLOW_NOT_FOUND: 'Verify workflow ID exists in N8N instance',
+  WORKFLOW_VALIDATION: 'Check workflow schema - ensure all nodes have valid types and required parameters',
+  WORKFLOW_DUPLICATE: 'Use a different workflow name or update existing workflow',
+
+  // Execution errors
+  EXECUTION_NOT_FOUND: 'Verify execution ID - it may have been deleted or never existed',
+  EXECUTION_STILL_RUNNING: 'Wait for execution to complete before accessing full data',
+
+  // Credential errors
+  CREDENTIAL_NOT_FOUND: 'Verify credential ID or name exists in N8N',
+  CREDENTIAL_INVALID: 'Check credential configuration and test connection',
+
+  // Authentication errors
+  INVALID_API_KEY: 'Verify N8N API key is correct and has not expired',
+  INSUFFICIENT_PERMISSIONS: 'Check N8N user permissions for this operation',
+
+  // Network errors
+  NETWORK_ERROR: 'Check N8N instance is running and accessible',
+  TIMEOUT: 'N8N instance may be slow - consider increasing timeout or checking instance health',
+
+  // Generic
+  UNKNOWN: 'Check N8N instance logs for detailed error information',
+} as const;
+
+/**
+ * Map N8N HTTP status + error code to recovery hint
+ */
+function getN8NRecoveryHint(statusCode: number, n8nCode?: number | string, path?: string): string {
+  // 401 Unauthorized
+  if (statusCode === 401) {
+    return N8N_RECOVERY_HINTS.INVALID_API_KEY;
+  }
+
+  // 403 Forbidden
+  if (statusCode === 403) {
+    return N8N_RECOVERY_HINTS.INSUFFICIENT_PERMISSIONS;
+  }
+
+  // 404 Not Found
+  if (statusCode === 404) {
+    if (path?.includes('/workflow')) return N8N_RECOVERY_HINTS.WORKFLOW_NOT_FOUND;
+    if (path?.includes('/execution')) return N8N_RECOVERY_HINTS.EXECUTION_NOT_FOUND;
+    if (path?.includes('/credential')) return N8N_RECOVERY_HINTS.CREDENTIAL_NOT_FOUND;
+  }
+
+  // 400 Bad Request - check N8N error code
+  if (statusCode === 400) {
+    const codeStr = String(n8nCode || '');
+    if (codeStr.includes('VALIDATION') || codeStr.includes('validation')) {
+      return N8N_RECOVERY_HINTS.WORKFLOW_VALIDATION;
+    }
+    if (codeStr.includes('DUPLICATE') || codeStr.includes('duplicate')) {
+      return N8N_RECOVERY_HINTS.WORKFLOW_DUPLICATE;
+    }
+  }
+
+  // 409 Conflict
+  if (statusCode === 409) {
+    return N8N_RECOVERY_HINTS.EXECUTION_STILL_RUNNING;
+  }
+
+  return N8N_RECOVERY_HINTS.UNKNOWN;
+}
 
 export interface N8NClientConfig {
   baseUrl: string;
@@ -63,24 +132,30 @@ export class N8NClient {
       clearTimeout(timeoutId);
 
       if (!response.ok) {
-        const errorData: N8NErrorResponse = await response.json().catch(() => ({
+        const errorData = await response.json().catch(() => ({
           code: response.status,
           message: response.statusText,
-        }));
+        })) as N8NErrorResponse;
 
         throw new McpError(
-          ErrorContext.EXTERNAL_API,
+          McpErrorCode.TOOL_EXECUTION_FAILED,
           `N8N API error: ${errorData.message}`,
           {
-            statusCode: response.status,
-            n8nCode: errorData.code,
-            hint: errorData.hint,
-            path,
+            details: {
+              context: errorContext()
+                .location('N8NClient.request')
+                .operation(`${method} ${path}`)
+                .hint(getN8NRecoveryHint(response.status, errorData.code, path))
+                .data('statusCode', response.status)
+                .data('n8nCode', errorData.code)
+                .data('path', path)
+                .build()
+            }
           }
         );
       }
 
-      return await response.json();
+      return await response.json() as T;
     } catch (error) {
       clearTimeout(timeoutId);
 
@@ -91,23 +166,52 @@ export class N8NClient {
       if (error instanceof Error) {
         if (error.name === 'AbortError') {
           throw new McpError(
-            ErrorContext.TIMEOUT,
+            McpErrorCode.TIMEOUT,
             `Request to N8N API timed out after ${this.timeout}ms`,
-            { path }
+            {
+              details: {
+                context: errorContext()
+                  .location('N8NClient.request')
+                  .operation(`${method} ${path}`)
+                  .hint(N8N_RECOVERY_HINTS.TIMEOUT)
+                  .data('timeout_ms', this.timeout)
+                  .data('path', path)
+                  .build()
+              }
+            }
           );
         }
 
         throw new McpError(
-          ErrorContext.NETWORK,
+          McpErrorCode.CONNECTION_FAILED,
           `Network error: ${error.message}`,
-          { path, originalError: error.message }
+          {
+            details: {
+              context: errorContext()
+                .location('N8NClient.request')
+                .operation(`${method} ${path}`)
+                .hint(N8N_RECOVERY_HINTS.NETWORK_ERROR)
+                .data('path', path)
+                .data('originalError', error.message)
+                .build()
+            }
+          }
         );
       }
 
       throw new McpError(
-        ErrorContext.UNKNOWN,
+        McpErrorCode.INTERNAL_ERROR,
         'Unknown error occurred',
-        { path }
+        {
+          details: {
+            context: errorContext()
+              .location('N8NClient.request')
+              .operation(`${method} ${path}`)
+              .hint(N8N_RECOVERY_HINTS.UNKNOWN)
+              .data('path', path)
+              .build()
+          }
+        }
       );
     }
   }
