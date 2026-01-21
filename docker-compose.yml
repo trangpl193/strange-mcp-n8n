@@ -1,0 +1,51 @@
+version: '3.8'
+
+services:
+  mcp-n8n:
+    image: strange-mcp-n8n:latest
+    container_name: strange-mcp-n8n-server
+    build:
+      context: ..  # Build from parent directory to access both repos
+      dockerfile: strange-mcp-n8n/Dockerfile
+      args:
+        GIT_COMMIT: ${GIT_COMMIT:-dev}
+        BUILD_DATE: ${BUILD_DATE:-unknown}
+    ports:
+      - "3302:3302"  # Production port
+    environment:
+      # Server Config
+      MCP_PORT: 3302
+      MCP_HOST: 0.0.0.0
+      NODE_ENV: ${NODE_ENV:-development}
+
+      # Authentication
+      MCP_API_KEY: ${MCP_API_KEY}
+
+      # N8N Connection
+      N8N_URL: ${N8N_URL}
+      N8N_API_KEY: ${N8N_API_KEY}
+      N8N_TIMEOUT: ${N8N_TIMEOUT:-30000}
+
+      # Timezone
+      TZ: Asia/Ho_Chi_Minh
+
+      # Logging
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    networks:
+      - default
+      - selfhost_internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3302/health').then(r => r.json()).then(d => d.status === 'healthy' ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      start_period: 40s
+      retries: 3
+    labels:
+      - "strange.version=1.2.0"
+      - "strange.service=mcp-n8n"
+      - "strange.transport=streamable-http"
+
+networks:
+  selfhost_internal:
+    external: true

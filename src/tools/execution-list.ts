@@ -1,4 +1,4 @@
-import { ExecutionMetadata, TransparentCursor, createMetadataFromStart } from '@strange/mcp-core';
+import { ExecutionMetadata, createMetadataFromStart, createCursor, createInitialCursor, TransparentCursor } from '@strange/mcp-core';
 import { N8NClient } from '../services/index.js';
 import type { N8NExecution } from '../types.js';
 
@@ -66,13 +66,19 @@ export async function executionList(
     ? parseInt(Buffer.from(input.cursor, 'base64').toString('utf-8').split(':')[1] || '0', 10)
     : 0;
 
-  // Create transparent cursor
-  const cursor: TransparentCursor = {
-    token: response.nextCursor || null,
-    position: currentOffset + executions.length,
-    has_more: !!response.nextCursor,
-    page_size: input.limit || 100,
-  };
+  // Create transparent cursor using mcp-core helper
+  const cursor: TransparentCursor = input.cursor
+    ? createCursor({
+        token: response.nextCursor || null,
+        offset: currentOffset,
+        fetchedRows: executions.length,
+        fetchSize: input.limit || 100,
+      })
+    : createInitialCursor(
+        response.nextCursor || null,
+        executions.length,
+        input.limit || 100
+      );
 
   // Execution metadata
   const meta = createMetadataFromStart(startTime, '1.2.0');
