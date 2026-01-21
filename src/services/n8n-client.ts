@@ -1,9 +1,9 @@
 import { McpError, McpErrorCode, errorContext } from '@strange/mcp-core';
 import type {
   N8NWorkflow,
+  N8NNode,
   N8NExecution,
   N8NExecutionWithData,
-  N8NCredential,
   N8NListResponse,
   N8NErrorResponse,
 } from '../types.js';
@@ -298,6 +298,27 @@ export class N8NClient {
   }
 
   /**
+   * Activate workflow
+   * N8N API treats 'active' as read-only on PUT, so activation requires separate endpoint
+   */
+  async activateWorkflow(workflowId: string): Promise<N8NWorkflow> {
+    return this.request<N8NWorkflow>(
+      'POST',
+      `/api/v1/workflows/${workflowId}/activate`
+    );
+  }
+
+  /**
+   * Deactivate workflow
+   */
+  async deactivateWorkflow(workflowId: string): Promise<N8NWorkflow> {
+    return this.request<N8NWorkflow>(
+      'POST',
+      `/api/v1/workflows/${workflowId}/deactivate`
+    );
+  }
+
+  /**
    * List executions
    */
   async listExecutions(params?: {
@@ -336,12 +357,195 @@ export class N8NClient {
     executionId: string,
     includeData: 'none' | 'result' | 'all' = 'all'
   ): Promise<N8NExecutionWithData> {
+    // N8N API expects boolean for includeData
+    const includeDataBool = includeData !== 'none' ? 'true' : 'false';
     return this.request<N8NExecutionWithData>(
       'GET',
       `/api/v1/executions/${executionId}`,
       undefined,
-      { includeData }
+      { includeData: includeDataBool }
     );
+  }
+
+  // ========================================
+  // Node-level operations (abstraction layer)
+  // ========================================
+
+  /**
+   * Find a node by name or ID within a workflow
+   * @param workflow - The workflow to search in
+   * @param identifier - Node name or ID
+   * @returns The node and its index, or null if not found
+   */
+  findNodeByIdentifier(
+    workflow: N8NWorkflow,
+    identifier: string
+  ): { node: N8NNode; index: number } | null {
+    const index = workflow.nodes.findIndex(
+      (n) => n.id === identifier || n.name === identifier
+    );
+    if (index === -1) return null;
+    return { node: workflow.nodes[index], index };
+  }
+
+  /**
+   * Get a single node from a workflow
+   * Encapsulates: fetch workflow -> find node -> return node only
+   */
+  async getNode(
+    workflowId: string,
+    nodeIdentifier: string
+  ): Promise<{ node: N8NNode; workflow: N8NWorkflow }> {
+    const workflow = await this.getWorkflow(workflowId);
+    const result = this.findNodeByIdentifier(workflow, nodeIdentifier);
+
+    if (!result) {
+      throw new McpError(
+        McpErrorCode.INVALID_PARAMS,
+        `Node "${nodeIdentifier}" not found in workflow "${workflow.name}"`,
+        {
+          details: {
+            context: errorContext()
+              .location('N8NClient.getNode')
+              .operation(`find node ${nodeIdentifier}`)
+              .hint(`Available nodes: ${workflow.nodes.map(n => n.name).join(', ')}`)
+              .data('workflowId', workflowId)
+              .data('nodeIdentifier', nodeIdentifier)
+              .build()
+          }
+        }
+      );
+    }
+
+    return { node: result.node, workflow };
+  }
+
+  /**
+   * Update a single node in a workflow
+   * Encapsulates: fetch workflow -> modify node -> PUT full workflow
+   * @returns Updated node and workflow metadata
+   */
+  async updateNode(
+    workflowId: string,
+    nodeIdentifier: string,
+    updates: {
+      name?: string;
+      parameters?: Record<string, any>;
+      position?: [number, number];
+      disabled?: boolean;
+    }
+  ): Promise<{ node: N8NNode; workflow: N8NWorkflow; updatedFields: string[] }> {
+    // 1. Fetch current workflow
+    const workflow = await this.getWorkflow(workflowId);
+
+    // 2. Find the node
+    const result = this.findNodeByIdentifier(workflow, nodeIdentifier);
+    if (!result) {
+      throw new McpError(
+        McpErrorCode.INVALID_PARAMS,
+        `Node "${nodeIdentifier}" not found in workflow "${workflow.name}"`,
+        {
+          details: {
+            context: errorContext()
+              .location('N8NClient.updateNode')
+              .operation(`find node ${nodeIdentifier}`)
+              .hint(`Available nodes: ${workflow.nodes.map(n => n.name).join(', ')}`)
+              .data('workflowId', workflowId)
+              .data('nodeIdentifier', nodeIdentifier)
+              .build()
+          }
+        }
+      );
+    }
+
+    // 3. Track updated fields
+    const updatedFields: string[] = [];
+    const originalNodeName = result.node.name;
+
+    // 4. Apply updates
+    if (updates.name !== undefined && updates.name !== result.node.name) {
+      // If renaming, also update connections
+      const oldName = result.node.name;
+      result.node.name = updates.name;
+      updatedFields.push('name');
+
+      // Update connections that reference this node
+      this.updateConnectionsForRenamedNode(workflow, oldName, updates.name);
+    }
+
+    if (updates.parameters !== undefined) {
+      // Merge parameters (allow partial update)
+      result.node.parameters = {
+        ...result.node.parameters,
+        ...updates.parameters,
+      };
+      updatedFields.push('parameters');
+    }
+
+    if (updates.position !== undefined) {
+      result.node.position = updates.position;
+      updatedFields.push('position');
+    }
+
+    if (updates.disabled !== undefined) {
+      (result.node as any).disabled = updates.disabled;
+      updatedFields.push('disabled');
+    }
+
+    // 5. Update workflow in place
+    workflow.nodes[result.index] = result.node;
+
+    // 6. PUT the full workflow
+    // Note: N8N API treats 'active' as read-only on PUT, so we omit it
+    const updatedWorkflow = await this.updateWorkflow(workflowId, {
+      name: workflow.name,
+      nodes: workflow.nodes,
+      connections: workflow.connections,
+      settings: workflow.settings,
+    });
+
+    // 7. Find the updated node in response
+    const updatedNode = this.findNodeByIdentifier(
+      updatedWorkflow,
+      updates.name || originalNodeName
+    );
+
+    return {
+      node: updatedNode?.node || result.node,
+      workflow: updatedWorkflow,
+      updatedFields,
+    };
+  }
+
+  /**
+   * Update connections when a node is renamed
+   */
+  private updateConnectionsForRenamedNode(
+    workflow: N8NWorkflow,
+    oldName: string,
+    newName: string
+  ): void {
+    // Update source node name in connections
+    if (workflow.connections[oldName]) {
+      workflow.connections[newName] = workflow.connections[oldName];
+      delete workflow.connections[oldName];
+    }
+
+    // Update target node references
+    for (const sourceNode of Object.keys(workflow.connections)) {
+      const conn = workflow.connections[sourceNode];
+      if (conn.main) {
+        for (const outputArr of conn.main) {
+          if (outputArr) {
+            for (const target of outputArr) {
+              if (target.node === oldName) {
+                target.node = newName;
+              }
+            }
+          }
+        }
+      }
+    }
   }
 
 }

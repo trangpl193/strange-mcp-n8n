@@ -1,6 +1,6 @@
 import { ExecutionMetadata, createMetadataFromStart } from '@strange/mcp-core';
 import { N8NClient } from '../services/index.js';
-import type { N8NWorkflow, N8NNode, N8NConnections } from '../types.js';
+import type { N8NWorkflow, N8NNode } from '../types.js';
 
 export interface WorkflowGetInput {
   workflow_id: string;

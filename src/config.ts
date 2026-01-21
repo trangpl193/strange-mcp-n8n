@@ -8,6 +8,14 @@ export interface N8NConfig {
 }
 
 /**
+ * Session store configuration
+ */
+export interface SessionStoreConfig {
+  type: 'memory' | 'redis';
+  redisUrl?: string;
+}
+
+/**
  * Load configuration from environment variables
  */
 export function loadConfig(): N8NConfig {
@@ -27,4 +35,21 @@ export function loadConfig(): N8NConfig {
     apiKey,
     timeout: parseInt(process.env.N8N_TIMEOUT || '30000', 10),
   };
+}
+
+/**
+ * Load session store configuration
+ */
+export function loadSessionStoreConfig(): SessionStoreConfig {
+  const redisUrl = process.env.REDIS_URL;
+
+  // Use Redis if REDIS_URL is set, otherwise fallback to memory
+  if (redisUrl) {
+    return {
+      type: 'redis',
+      redisUrl,
+    };
+  }
+
+  return { type: 'memory' };
 }

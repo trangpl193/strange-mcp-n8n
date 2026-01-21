@@ -41,13 +41,25 @@ export async function workflowCreate(
   const workflowData = transformer.transform(input.workflow);
 
   // Create workflow via N8N API
+  // Note: N8N API treats 'active' as read-only on POST/PUT, so we omit it
   const response: N8NWorkflow = await client.createWorkflow({
     name: workflowData.name!,
     nodes: workflowData.nodes!,
     connections: workflowData.connections!,
-    active: input.activate || false,
     settings: workflowData.settings,
   });
+
+  // If activation requested, use separate endpoint
+  let finalActive = response.active;
+  if (input.activate === true && !response.active) {
+    try {
+      await client.activateWorkflow(response.id);
+      finalActive = true;
+    } catch (activateError) {
+      // Workflow created but activation failed - continue with inactive state
+      console.warn(`Workflow created but activation failed: ${activateError}`);
+    }
+  }
 
   // Execution metadata
   const meta: ExecutionMetadata = createMetadataFromStart(startTime, '1.2.0');
@@ -55,7 +67,7 @@ export async function workflowCreate(
   return {
     workflow_id: response.id,
     name: response.name,
-    active: response.active,
+    active: finalActive,
     nodes_count: response.nodes.length,
     created_at: response.createdAt,
     meta,

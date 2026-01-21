@@ -15,6 +15,7 @@ import { randomUUID } from 'crypto';
 import { z } from 'zod';
 import { createApiKeyMiddleware, SessionCleanup } from '@strange/mcp-core';
 import { N8NClient } from './services/index.js';
+import { initSessionStore, getSessionStoreType } from './services/session-store-factory.js';
 import {
   workflowList,
   workflowCreate,
@@ -22,6 +23,15 @@ import {
   workflowUpdate,
   executionList,
   executionDebug,
+  nodeGet,
+  nodeUpdate,
+  // Builder Pattern (Phase 2A)
+  builderStart,
+  builderAddNode,
+  builderConnect,
+  builderCommit,
+  builderDiscard,
+  builderList,
 } from './tools/index.js';
 
 // Configuration interface
@@ -89,7 +99,9 @@ function createMcpServer(client: N8NClient): McpServer {
       },
     },
     async (args: { workflowId: string }) => {
-      const result = await workflowGet(client, args);
+      // Adapter: Map MCP schema to implementation interface
+      const input = { workflow_id: args.workflowId };
+      const result = await workflowGet(client, input);
       return {
         content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
       };
@@ -97,51 +109,199 @@ function createMcpServer(client: N8NClient): McpServer {
   );
 
   // Tool: workflow_create
+  // Schema: Gemini-compatible (flattened to primitives + JSON strings)
   server.registerTool(
     'workflow_create',
     {
       description: 'Create a new N8N workflow from simplified schema. Returns created workflow with ID.',
       inputSchema: {
         name: z.string().describe('Workflow name'),
-        steps: z.array(z.any()).describe('Array of workflow steps'),
-        active: z.boolean().optional().describe('Set workflow as active'),
-        tags: z.array(z.string()).optional().describe('Workflow tags'),
+        steps_json: z.string().describe(
+          'JSON array of workflow steps. Example: [{"type":"webhook","config":{"path":"/hook"}},{"type":"postgres","action":"query","config":{"query":"SELECT 1"}}]'
+        ),
+        active: z.boolean().optional().describe('Set workflow as active after creation'),
+        tags_csv: z.string().optional().describe(
+          'Comma-separated list of tags. Example: "backup,daily,production"'
+        ),
+        credentials_json: z.string().optional().describe(
+          'JSON object mapping credential names to IDs. Example: {"postgres":"cred-abc123"}'
+        ),
       },
     },
-    async (args: { name: string; steps: any[]; active?: boolean; tags?: string[] }) => {
-      const result = await workflowCreate(client, args);
-      return {
-        content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+    async (args, _extra) => {
+      // Parse JSON/CSV strings to structured data
+      let steps: any[];
+      let tags: string[] | undefined;
+      let credentials: Record<string, string> | undefined;
+
+      try {
+        steps = JSON.parse(args.steps_json as string);
+      } catch (e) {
+        throw new Error(`workflow_create failed: Invalid steps_json - must be valid JSON array. Error: ${e}`);
+      }
+
+      if (args.tags_csv) {
+        tags = (args.tags_csv as string).split(',').map(t => t.trim()).filter(t => t.length > 0);
+      }
+
+      if (args.credentials_json) {
+        try {
+          credentials = JSON.parse(args.credentials_json as string);
+        } catch (e) {
+          throw new Error(`workflow_create failed: Invalid credentials_json - must be valid JSON object. Error: ${e}`);
+        }
+      }
+
+      // Adapter: Map parsed data to nested WorkflowCreateInput
+      const input = {
+        workflow: {
+          name: args.name as string,
+          steps,
+        },
+        credentials,
+        activate: args.active as boolean | undefined,
       };
+
+      try {
+        const result = await workflowCreate(client, input);
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+        };
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        const hint = `Check that 'steps_json' contains valid step objects with 'type' property. ` +
+                     `Supported types: webhook, schedule, manual, http, postgres, discord, respond, if, switch, merge, set, code`;
+        throw new Error(`workflow_create failed: ${errorMessage}\n\nHint: ${hint}`);
+      }
     }
   );
 
   // Tool: workflow_update
+  // Schema: Gemini-compatible (flattened to primitives + JSON strings)
   server.registerTool(
     'workflow_update',
     {
-      description: 'Update an existing N8N workflow. Requires full workflow definition.',
+      description: 'Update an existing N8N workflow. Supports 3 strategies: (1) simplified schema replacement, (2) direct N8N JSON, (3) quick operations (activate, rename, tags).',
       inputSchema: {
-        workflowId: z.string().describe('Workflow ID'),
+        workflowId: z.string().describe('Workflow ID to update'),
+        // Strategy 1: Simplified schema replacement
         name: z.string().optional().describe('New workflow name'),
+        steps_json: z.string().optional().describe(
+          'JSON array of workflow steps (simplified schema). Example: [{"type":"postgres","action":"query","config":{}}]'
+        ),
+        credentials_json: z.string().optional().describe(
+          'JSON object mapping credential names to IDs. Example: {"postgres":"cred-abc123"}'
+        ),
+        // Strategy 2: Direct N8N JSON
+        nodes_json: z.string().optional().describe(
+          'JSON array of N8N nodes (direct JSON update). Full N8N node format.'
+        ),
+        connections_json: z.string().optional().describe(
+          'JSON object of N8N connections (direct JSON update). Full N8N connections format.'
+        ),
+        // Strategy 3: Quick operations
         active: z.boolean().optional().describe('Set active status'),
-        tags: z.array(z.string()).optional().describe('Workflow tags'),
-        nodes: z.array(z.any()).optional().describe('Updated nodes'),
-        connections: z.any().optional().describe('Updated connections'),
+        rename: z.string().optional().describe('Rename workflow (quick operation)'),
+        tags_csv: z.string().optional().describe('Set workflow tags (comma-separated)'),
+        addTags_csv: z.string().optional().describe('Add tags to workflow (comma-separated)'),
+        removeTags_csv: z.string().optional().describe('Remove tags from workflow (comma-separated)'),
       },
     },
-    async (args: {
-      workflowId: string;
-      name?: string;
-      active?: boolean;
-      tags?: string[];
-      nodes?: any[];
-      connections?: any;
-    }) => {
-      const result = await workflowUpdate(client, args);
-      return {
-        content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+    async (args, _extra) => {
+      // Parse JSON/CSV strings to structured data
+      let steps: any[] | undefined;
+      let nodes: any[] | undefined;
+      let connections: any | undefined;
+      let credentials: Record<string, string> | undefined;
+      let addTags: string[] | undefined;
+      let removeTags: string[] | undefined;
+
+      // Parse steps_json
+      if (args.steps_json) {
+        try {
+          steps = JSON.parse(args.steps_json as string);
+        } catch (e) {
+          throw new Error(`workflow_update failed: Invalid steps_json - must be valid JSON array. Error: ${e}`);
+        }
+      }
+
+      // Parse nodes_json
+      if (args.nodes_json) {
+        try {
+          nodes = JSON.parse(args.nodes_json as string);
+        } catch (e) {
+          throw new Error(`workflow_update failed: Invalid nodes_json - must be valid JSON array. Error: ${e}`);
+        }
+      }
+
+      // Parse connections_json
+      if (args.connections_json) {
+        try {
+          connections = JSON.parse(args.connections_json as string);
+        } catch (e) {
+          throw new Error(`workflow_update failed: Invalid connections_json - must be valid JSON object. Error: ${e}`);
+        }
+      }
+
+      // Parse credentials_json
+      if (args.credentials_json) {
+        try {
+          credentials = JSON.parse(args.credentials_json as string);
+        } catch (e) {
+          throw new Error(`workflow_update failed: Invalid credentials_json - must be valid JSON object. Error: ${e}`);
+        }
+      }
+
+      // Parse CSV tags
+      if (args.addTags_csv) {
+        addTags = (args.addTags_csv as string).split(',').map(t => t.trim()).filter(t => t.length > 0);
+      }
+      if (args.removeTags_csv) {
+        removeTags = (args.removeTags_csv as string).split(',').map(t => t.trim()).filter(t => t.length > 0);
+      }
+
+      // Adapter: Map parsed data to WorkflowUpdateInput with proper strategy detection
+      const input: any = {
+        workflow_id: args.workflowId as string,
       };
+
+      // Strategy 1: Simplified schema (if steps provided)
+      if (steps) {
+        input.workflow = {
+          name: (args.name as string) || '',
+          steps,
+        };
+        input.credentials = credentials;
+      }
+      // Strategy 2: Direct N8N JSON (if nodes provided)
+      else if (nodes) {
+        input.workflow_json = {
+          name: args.name as string | undefined,
+          nodes,
+          connections,
+          active: args.active as boolean | undefined,
+        };
+      }
+      // Strategy 3: Quick operations
+      else {
+        if (args.active !== undefined) input.activate = args.active;
+        if (args.rename) input.rename = args.rename;
+        if (addTags) input.add_tags = addTags;
+        if (removeTags) input.remove_tags = removeTags;
+      }
+
+      try {
+        const result = await workflowUpdate(client, input);
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+        };
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        const hint = `Update strategies: (1) provide 'steps_json' for simplified schema, ` +
+                     `(2) provide 'nodes_json'+'connections_json' for direct N8N JSON, ` +
+                     `(3) use 'active', 'rename', 'addTags_csv', 'removeTags_csv' for quick operations.`;
+        throw new Error(`workflow_update failed: ${errorMessage}\n\nHint: ${hint}`);
+      }
     }
   );
 
@@ -152,12 +312,18 @@ function createMcpServer(client: N8NClient): McpServer {
       description: 'List N8N workflow executions with filtering. Returns execution summaries.',
       inputSchema: {
         workflowId: z.string().optional().describe('Filter by workflow ID'),
-        status: z.string().optional().describe('Filter by status (running, success, error)'),
+        status: z.enum(['success', 'error', 'running', 'waiting']).optional().describe('Filter by status'),
         limit: z.number().optional().describe('Maximum number of executions to return'),
       },
     },
-    async (args: { workflowId?: string; status?: string; limit?: number }) => {
-      const result = await executionList(client, args);
+    async (args, _extra) => {
+      // Adapter: Map camelCase to snake_case
+      const input = {
+        workflow_id: args.workflowId as string | undefined,
+        status: args.status as 'success' | 'error' | 'running' | 'waiting' | undefined,
+        limit: args.limit as number | undefined,
+      };
+      const result = await executionList(client, input);
       return {
         content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
       };
@@ -173,8 +339,275 @@ function createMcpServer(client: N8NClient): McpServer {
         executionId: z.string().describe('Execution ID'),
       },
     },
-    async (args: { executionId: string }) => {
-      const result = await executionDebug(client, args);
+    async (args, _extra) => {
+      // Adapter: Map camelCase to snake_case
+      const input = { execution_id: args.executionId as string };
+      const result = await executionDebug(client, input);
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+      };
+    }
+  );
+
+  // ========================================
+  // Node-level operations (Workflow Builder Enhancement)
+  // ========================================
+
+  // Tool: node_get
+  server.registerTool(
+    'node_get',
+    {
+      description: 'Get a single node from a workflow. Use this to view node configuration before updating.',
+      inputSchema: {
+        workflowId: z.string().describe('Workflow ID'),
+        nodeIdentifier: z.string().describe('Node name or ID'),
+      },
+    },
+    async (args, _extra) => {
+      const input = {
+        workflow_id: args.workflowId as string,
+        node_identifier: args.nodeIdentifier as string,
+      };
+      const result = await nodeGet(client, input);
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+      };
+    }
+  );
+
+  // Tool: node_update
+  // Schema: Gemini-compatible (flattened position and parameters)
+  server.registerTool(
+    'node_update',
+    {
+      description: 'Update a single node in a workflow. Handles full workflow fetch, node modification, and PUT automatically. Parameters are MERGED with existing (use null to remove).',
+      inputSchema: {
+        workflowId: z.string().describe('Workflow ID'),
+        nodeIdentifier: z.string().describe('Node name or ID to update'),
+        name: z.string().optional().describe('New name for the node (also updates connections)'),
+        parameters_json: z.string().optional().describe(
+          'JSON object of parameters to update (merged with existing). Example: {"query":"SELECT * FROM users"}'
+        ),
+        positionX: z.number().optional().describe('New X position'),
+        positionY: z.number().optional().describe('New Y position'),
+        disabled: z.boolean().optional().describe('Enable/disable the node'),
+      },
+    },
+    async (args, _extra) => {
+      // Parse JSON strings
+      let parameters: Record<string, unknown> | undefined;
+      let position: [number, number] | undefined;
+
+      if (args.parameters_json) {
+        try {
+          parameters = JSON.parse(args.parameters_json as string);
+        } catch (e) {
+          throw new Error(`node_update failed: Invalid parameters_json - must be valid JSON object. Error: ${e}`);
+        }
+      }
+
+      if (args.positionX !== undefined && args.positionY !== undefined) {
+        position = [args.positionX as number, args.positionY as number];
+      }
+
+      const input = {
+        workflow_id: args.workflowId as string,
+        node_identifier: args.nodeIdentifier as string,
+        name: args.name as string | undefined,
+        parameters,
+        position,
+        disabled: args.disabled as boolean | undefined,
+      };
+      const result = await nodeUpdate(client, input);
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+      };
+    }
+  );
+
+  // ========================================
+  // Builder Pattern Tools (Phase 2A: Stateful Workflow Builder)
+  // ========================================
+
+  // Tool: builder_list (Discovery - solves Blind Box Problem)
+  server.registerTool(
+    'builder_list',
+    {
+      description: 'List pending builder sessions. Use this to discover drafts from previous sessions (solves Blind Box Problem). Call this first when user mentions "continue" or "resume".',
+      inputSchema: {
+        includeExpired: z.boolean().optional().describe('Include recently expired sessions (default: true)'),
+      },
+    },
+    async (args, _extra) => {
+      const input = {
+        include_expired: args.includeExpired as boolean | undefined,
+      };
+      const result = await builderList(input);
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+      };
+    }
+  );
+
+  // Tool: builder_start
+  // Schema: Gemini-compatible (flattened credentials)
+  server.registerTool(
+    'builder_start',
+    {
+      description: 'Start a new workflow builder session. Creates a draft that can be built step-by-step.',
+      inputSchema: {
+        name: z.string().describe('Workflow name'),
+        description: z.string().optional().describe('Workflow description'),
+        credentials_json: z.string().optional().describe(
+          'JSON object mapping credential names to IDs. Example: {"postgres":"cred-abc123","discord":"cred-xyz789"}'
+        ),
+      },
+    },
+    async (args, _extra) => {
+      // Parse JSON strings
+      let credentials: Record<string, string> | undefined;
+
+      if (args.credentials_json) {
+        try {
+          credentials = JSON.parse(args.credentials_json as string);
+        } catch (e) {
+          throw new Error(`builder_start failed: Invalid credentials_json - must be valid JSON object. Error: ${e}`);
+        }
+      }
+
+      const input = {
+        name: args.name as string,
+        description: args.description as string | undefined,
+        credentials,
+      };
+      const result = await builderStart(input);
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+      };
+    }
+  );
+
+  // Tool: builder_add_node
+  // Schema: Gemini-compatible (flattened node object to individual fields)
+  server.registerTool(
+    'builder_add_node',
+    {
+      description: 'Add a node to the builder draft. Supports simplified node types.',
+      inputSchema: {
+        sessionId: z.string().describe('Builder session ID'),
+        nodeType: z.string().describe('Node type: webhook, schedule, manual, http, postgres, discord, code, if, switch, merge, set, respond'),
+        nodeName: z.string().optional().describe('Node name (auto-generated if omitted)'),
+        nodeAction: z.string().optional().describe('Action for nodes with multiple operations (e.g., "query", "insert")'),
+        nodeConfig_json: z.string().optional().describe(
+          'JSON object with type-specific configuration. Example: {"query":"SELECT 1","operation":"executeQuery"}'
+        ),
+        credentialName: z.string().optional().describe('Credential name (must be in session credentials map)'),
+        positionX: z.number().optional().describe('Node X position (auto-calculated if omitted)'),
+        positionY: z.number().optional().describe('Node Y position (auto-calculated if omitted)'),
+      },
+    },
+    async (args, _extra) => {
+      // Parse JSON strings and build node object
+      let config: Record<string, any> | undefined;
+      let position: [number, number] | undefined;
+
+      if (args.nodeConfig_json) {
+        try {
+          config = JSON.parse(args.nodeConfig_json as string);
+        } catch (e) {
+          throw new Error(`builder_add_node failed: Invalid nodeConfig_json - must be valid JSON object. Error: ${e}`);
+        }
+      }
+
+      if (args.positionX !== undefined && args.positionY !== undefined) {
+        position = [args.positionX as number, args.positionY as number];
+      }
+
+      // Reconstruct the node object expected by the handler
+      const node: any = {
+        type: args.nodeType as string,
+      };
+      if (args.nodeName) node.name = args.nodeName;
+      if (args.nodeAction) node.action = args.nodeAction;
+      if (config) node.config = config;
+      if (args.credentialName) node.credential = args.credentialName;
+      if (position) node.position = position;
+
+      const input = {
+        session_id: args.sessionId as string,
+        node,
+      };
+      const result = await builderAddNode(input);
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+      };
+    }
+  );
+
+  // Tool: builder_connect
+  server.registerTool(
+    'builder_connect',
+    {
+      description: 'Connect two nodes in the builder draft.',
+      inputSchema: {
+        sessionId: z.string().describe('Builder session ID'),
+        fromNode: z.string().describe('Source node name or ID'),
+        toNode: z.string().describe('Target node name or ID'),
+        fromOutput: z.number().optional().describe('Source output index (default: 0)'),
+        toInput: z.number().optional().describe('Target input index (default: 0)'),
+      },
+    },
+    async (args, _extra) => {
+      const input = {
+        session_id: args.sessionId as string,
+        from_node: args.fromNode as string,
+        to_node: args.toNode as string,
+        from_output: args.fromOutput as number | undefined,
+        to_input: args.toInput as number | undefined,
+      };
+      const result = await builderConnect(input);
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+      };
+    }
+  );
+
+  // Tool: builder_commit
+  server.registerTool(
+    'builder_commit',
+    {
+      description: 'Commit the builder draft to N8N. Creates the workflow and closes the session.',
+      inputSchema: {
+        sessionId: z.string().describe('Builder session ID'),
+        activate: z.boolean().optional().describe('Activate workflow after creation (default: false)'),
+      },
+    },
+    async (args, _extra) => {
+      const input = {
+        session_id: args.sessionId as string,
+        activate: args.activate as boolean | undefined,
+      };
+      const result = await builderCommit(client, input);
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+      };
+    }
+  );
+
+  // Tool: builder_discard
+  server.registerTool(
+    'builder_discard',
+    {
+      description: 'Discard a builder session without committing. Cleans up the draft.',
+      inputSchema: {
+        sessionId: z.string().describe('Builder session ID'),
+      },
+    },
+    async (args, _extra) => {
+      const input = {
+        session_id: args.sessionId as string,
+      };
+      const result = await builderDiscard(input);
       return {
         content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
       };
@@ -193,6 +626,10 @@ export async function startServer(config: N8NMcpServerConfig): Promise<void> {
 
   const httpPort = config.httpPort || 3302;
   const httpHost = config.httpHost || '0.0.0.0';
+
+  // Initialize session store (Redis or In-Memory based on REDIS_URL)
+  await initSessionStore();
+  console.log(`🗄️  Builder session store: ${getSessionStoreType()}`);
 
   // Initialize N8N client
   const client = new N8NClient({
@@ -228,7 +665,7 @@ export async function startServer(config: N8NMcpServerConfig): Promise<void> {
   const authenticate = createApiKeyMiddleware({ apiKey: config.mcpApiKey });
 
   // MCP endpoint
-  app.post('/mcp', authenticate, async (req: Request, res: Response) => {
+  app.post('/mcp', authenticate as any, async (req: Request, res: Response) => {
     const sessionId = req.headers['mcp-session-id'] as string | undefined;
 
     try {

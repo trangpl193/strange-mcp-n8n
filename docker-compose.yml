@@ -26,6 +26,10 @@ services:
       N8N_API_KEY: ${N8N_API_KEY}
       N8N_TIMEOUT: ${N8N_TIMEOUT:-30000}
 
+      # Redis for session persistence (Phase 2B)
+      # Uses Redis from selfhost stack for builder session storage
+      REDIS_URL: redis://redis:6379
+
       # Timezone
       TZ: Asia/Ho_Chi_Minh
 

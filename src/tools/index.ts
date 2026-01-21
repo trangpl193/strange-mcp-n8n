@@ -38,3 +38,44 @@ export type {
   ExecutionDebugOutput,
   NodeExecutionDebug,
 } from './execution-debug.js';
+
+// Node-level operations (Phase 1: Workflow Builder Enhancement)
+export { nodeGet } from './node-get.js';
+export type {
+  NodeGetInput,
+  NodeGetOutput,
+} from './node-get.js';
+
+export { nodeUpdate } from './node-update.js';
+export type {
+  NodeUpdateInput,
+  NodeUpdateOutput,
+} from './node-update.js';
+
+// ========================================
+// Builder Pattern (Phase 2A: Stateful Workflow Builder)
+// ========================================
+
+export { builderStart } from './builder-start.js';
+export { builderAddNode } from './builder-add-node.js';
+export { builderConnect } from './builder-connect.js';
+export { builderCommit } from './builder-commit.js';
+export { builderDiscard } from './builder-discard.js';
+export { builderList } from './builder-list.js';
+
+// Re-export types from services
+export type {
+  BuilderStartInput,
+  BuilderStartOutput,
+  BuilderAddNodeInput,
+  BuilderAddNodeOutput,
+  BuilderConnectInput,
+  BuilderConnectOutput,
+  BuilderCommitInput,
+  BuilderCommitOutput,
+  BuilderDiscardInput,
+  BuilderDiscardOutput,
+  BuilderListInput,
+  BuilderListOutput,
+  DraftSummary,
+} from '../services/builder-types.js';

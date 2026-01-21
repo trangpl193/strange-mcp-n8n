@@ -288,7 +288,16 @@ export class N8NMCPServer {
           }
 
           case 'workflow_create': {
-            const input = args as WorkflowCreateInput;
+            // Adapter: Map MCP flat params to nested WorkflowCreateInput
+            const rawArgs = args as unknown as { name: string; steps: any[]; active?: boolean; credentials?: Record<string, string> };
+            const input: WorkflowCreateInput = {
+              workflow: {
+                name: rawArgs.name,
+                steps: rawArgs.steps,
+              },
+              credentials: rawArgs.credentials,
+              activate: rawArgs.active,
+            };
             const result = await workflowCreate(this.client, input);
             return {
               content: [
@@ -301,7 +310,9 @@ export class N8NMCPServer {
           }
 
           case 'workflow_get': {
-            const input = args as WorkflowGetInput;
+            // Adapter: Map workflowId to workflow_id
+            const rawArgs = args as unknown as { workflowId: string };
+            const input: WorkflowGetInput = { workflow_id: rawArgs.workflowId };
             const result = await workflowGet(this.client, input);
             return {
               content: [
@@ -314,7 +325,43 @@ export class N8NMCPServer {
           }
 
           case 'workflow_update': {
-            const input = args as WorkflowUpdateInput;
+            // Adapter: Map MCP params to WorkflowUpdateInput with strategy detection
+            const rawArgs = args as unknown as {
+              workflowId: string;
+              name?: string;
+              steps?: any[];
+              credentials?: Record<string, string>;
+              nodes?: any[];
+              connections?: any;
+              active?: boolean;
+              rename?: string;
+              addTags?: string[];
+              removeTags?: string[];
+            };
+            const input: WorkflowUpdateInput = {
+              workflow_id: rawArgs.workflowId,
+            };
+
+            if (rawArgs.steps) {
+              input.workflow = {
+                name: rawArgs.name || '',
+                steps: rawArgs.steps,
+              };
+              input.credentials = rawArgs.credentials;
+            } else if (rawArgs.nodes) {
+              input.workflow_json = {
+                name: rawArgs.name,
+                nodes: rawArgs.nodes,
+                connections: rawArgs.connections,
+                active: rawArgs.active,
+              };
+            } else {
+              if (rawArgs.active !== undefined) input.activate = rawArgs.active;
+              if (rawArgs.rename) input.rename = rawArgs.rename;
+              if (rawArgs.addTags) input.add_tags = rawArgs.addTags;
+              if (rawArgs.removeTags) input.remove_tags = rawArgs.removeTags;
+            }
+
             const result = await workflowUpdate(this.client, input);
             return {
               content: [
@@ -327,7 +374,13 @@ export class N8NMCPServer {
           }
 
           case 'execution_list': {
-            const input = args as ExecutionListInput;
+            // Adapter: Map camelCase to snake_case
+            const rawArgs = args as unknown as { workflowId?: string; status?: string; limit?: number };
+            const input: ExecutionListInput = {
+              workflow_id: rawArgs.workflowId,
+              status: rawArgs.status as ExecutionListInput['status'],
+              limit: rawArgs.limit,
+            };
             const result = await executionList(this.client, input);
             return {
               content: [
@@ -340,7 +393,9 @@ export class N8NMCPServer {
           }
 
           case 'execution_debug': {
-            const input = args as ExecutionDebugInput;
+            // Adapter: Map executionId to execution_id
+            const rawArgs = args as unknown as { executionId: string };
+            const input: ExecutionDebugInput = { execution_id: rawArgs.executionId };
             const result = await executionDebug(this.client, input);
             return {
               content: [

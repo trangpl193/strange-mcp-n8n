@@ -293,7 +293,7 @@ describe('N8NClient', () => {
 
       expect(result).toEqual(mockExecution);
       expect(mockFetchHelper.mock).toHaveBeenCalledWith(
-        'https://n8n.example.com/api/v1/executions/exec-123?includeData=all',
+        'https://n8n.example.com/api/v1/executions/exec-123?includeData=true',
         expect.objectContaining({
           method: 'GET',
         })
