@@ -1,4 +1,4 @@
-import { ExecutionMetadata } from '@strange/mcp-core';
+import { ExecutionMetadata, createMetadataFromStart } from '@strange/mcp-core';
 import { N8NClient } from '../services/index.js';
 import type { N8NExecutionWithData } from '../types.js';
 
@@ -84,10 +84,7 @@ export async function executionDebug(
   });
 
   // Execution metadata
-  const meta: ExecutionMetadata = {
-    execution_time_ms: Date.now() - startTime,
-    rows_returned: nodes.length,
-  };
+  const meta = createMetadataFromStart(startTime, '1.2.0');
 
   return {
     execution_id: execution.id,

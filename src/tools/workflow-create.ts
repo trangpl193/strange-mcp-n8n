@@ -1,4 +1,4 @@
-import { ExecutionMetadata } from '@strange/mcp-core';
+import { createMetadataFromStart, ExecutionMetadata } from '@strange/mcp-core';
 import { N8NClient } from '../services/index.js';
 import { WorkflowTransformer } from '../services/workflow-transformer.js';
 import type { SimplifiedWorkflow } from '../schemas/simplified-workflow.js';
@@ -50,10 +50,7 @@ export async function workflowCreate(
   });
 
   // Execution metadata
-  const meta: ExecutionMetadata = {
-    execution_time_ms: Date.now() - startTime,
-    rows_affected: 1,
-  };
+  const meta: ExecutionMetadata = createMetadataFromStart(startTime, '1.2.0');
 
   return {
     workflow_id: response.id,

@@ -1,4 +1,4 @@
-import { ExecutionMetadata, TransparentCursor } from '@strange/mcp-core';
+import { ExecutionMetadata, TransparentCursor, createMetadataFromStart } from '@strange/mcp-core';
 import { N8NClient } from '../services/index.js';
 import type { N8NWorkflow } from '../types.js';
 
@@ -69,10 +69,7 @@ export async function workflowList(
   };
 
   // Execution metadata
-  const meta: ExecutionMetadata = {
-    execution_time_ms: Date.now() - startTime,
-    rows_returned: workflows.length,
-  };
+  const meta = createMetadataFromStart(startTime, '1.2.0');
 
   return {
     workflows,

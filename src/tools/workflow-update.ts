@@ -134,10 +134,7 @@ export async function workflowUpdate(
   );
 
   // Execution metadata
-  const meta: ExecutionMetadata = {
-    execution_time_ms: Date.now() - startTime,
-    rows_affected: 1,
-  };
+  const meta = createMetadataFromStart(startTime, '1.2.0');
 
   return {
     workflow_id: response.id,
