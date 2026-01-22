@@ -62,6 +62,27 @@ export async function builderCommit(
     );
   }
 
+  // Validate workflow has at least one trigger node
+  const triggerTypes = ['webhook', 'schedule', 'manual'];
+  const hasTrigger = session.workflow_draft.nodes.some(node => {
+    const baseType = node.type.replace('n8n-nodes-base.', '');
+    return baseType === 'webhook' || baseType === 'scheduleTrigger' || baseType === 'manualTrigger';
+  });
+
+  if (!hasTrigger) {
+    throw new McpError(
+      McpErrorCode.INVALID_PARAMS,
+      'Workflow must have at least one trigger node (webhook, schedule, or manual)',
+      {
+        details: {
+          availableTriggers: triggerTypes,
+          currentNodes: session.workflow_draft.nodes.map(n => n.type),
+          recovery_hint: 'Add a trigger node using builder_add_node with type webhook, schedule, or manual',
+        },
+      }
+    );
+  }
+
   // Transform draft to N8N format
   const n8nWorkflow = transformDraftToN8N(session);
 
@@ -164,20 +185,23 @@ function transformDraftToN8N(session: BuilderSession): {
     }
 
     // Ensure array exists for this output index
-    while (connections[fromNode.name].main.length <= conn.from_output) {
-      connections[fromNode.name].main.push([]);
-    }
+    const mainConnections = connections[fromNode.name]?.main;
+    if (mainConnections) {
+      while (mainConnections.length <= conn.from_output) {
+        mainConnections.push([]);
+      }
 
-    const toNode = draft.nodes.find(
-      (n) => n.name === conn.to_node || n.id === conn.to_node
-    );
+      const toNode = draft.nodes.find(
+        (n) => n.name === conn.to_node || n.id === conn.to_node
+      );
 
-    if (toNode) {
-      connections[fromNode.name].main[conn.from_output].push({
-        node: toNode.name,
-        type: 'main',
-        index: conn.to_input,
-      });
+      if (toNode) {
+        mainConnections[conn.from_output].push({
+          node: toNode.name,
+          type: 'main',
+          index: conn.to_input,
+        });
+      }
     }
   }
 

@@ -18,11 +18,8 @@ export async function builderList(
 
   const drafts = await store.getSummaries(input.include_expired ?? true);
 
-  // Filter out committed sessions
-  const pendingDrafts = drafts.filter((d) => d.status !== 'committed');
-
   return {
-    drafts: pendingDrafts,
-    total: pendingDrafts.length,
+    drafts,
+    total: drafts.length,
   };
 }

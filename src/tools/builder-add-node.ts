@@ -8,7 +8,7 @@
 import { McpError, McpErrorCode } from '@strange/mcp-core';
 import { randomUUID } from 'crypto';
 import { getUnifiedSessionStore } from '../services/session-store-factory.js';
-import { getNodeMapping } from '../schemas/node-mappings.js';
+import { getNodeMapping, getDefaultNodeName } from '../schemas/node-mappings.js';
 import type {
   BuilderAddNodeInput,
   BuilderAddNodeOutput,
@@ -67,7 +67,7 @@ export async function builderAddNode(
     (n) => n.type === input.node.type
   ).length;
   const nodeName = input.node.name ||
-    `${nodeMapping.defaultName}${existingCount > 0 ? ` ${existingCount + 1}` : ''}`;
+    `${getDefaultNodeName(input.node.type)}${existingCount > 0 ? ` ${existingCount + 1}` : ''}`;
 
   // Calculate position (auto-layout)
   const position = input.node.position || calculateNextPosition(session.workflow_draft.nodes);

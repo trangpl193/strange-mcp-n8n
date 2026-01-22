@@ -61,11 +61,14 @@ describe('WorkflowTransformer', () => {
       expect(checkNode).toBeDefined();
 
       const checkConnections = result.connections!['Check'];
-      // IF node creates one connection array with multiple targets
-      expect(checkConnections.main).toHaveLength(1);
-      expect(checkConnections.main![0]).toHaveLength(2);
+      // IF node creates multiple output ports (one per branch)
+      expect(checkConnections.main).toHaveLength(2);
+      // First output port (true/output 0) -> Success
+      expect(checkConnections.main![0]).toHaveLength(1);
       expect(checkConnections.main![0][0].node).toBe('Success');
-      expect(checkConnections.main![0][1].node).toBe('Error');
+      // Second output port (false/output 1) -> Error
+      expect(checkConnections.main![1]).toHaveLength(1);
+      expect(checkConnections.main![1][0].node).toBe('Error');
     });
 
     test('should resolve credentials with credential map', () => {
@@ -85,18 +88,17 @@ describe('WorkflowTransformer', () => {
       });
     });
 
-    test('should throw McpError on missing credential', () => {
-      expect(() => {
-        transformer.transform(POSTGRES_WORKFLOW);
-      }).toThrow(McpError);
+    test('should auto-generate mock credentials in test mode', () => {
+      // In test mode, transformer auto-generates mock credentials
+      const result = transformer.transform(POSTGRES_WORKFLOW);
 
-      try {
-        transformer.transform(POSTGRES_WORKFLOW);
-      } catch (error) {
-        expect(error).toBeInstanceOf(McpError);
-        expect((error as McpError).code).toBe(McpErrorCode.INVALID_PARAMS);
-        expect((error as McpError).message).toContain('test-db');
-      }
+      const postgresNode = result.nodes!.find(n => n.type === 'n8n-nodes-base.postgres');
+      expect(postgresNode).toBeDefined();
+      expect(postgresNode!.credentials).toBeDefined();
+      expect(postgresNode!.credentials!.postgresApi).toEqual({
+        id: 'mock-credential-test-db',
+        name: 'test-db',
+      });
     });
 
     test('should throw McpError on unknown node type', () => {

@@ -39,7 +39,6 @@ export class RedisSessionStore implements SessionStore {
   constructor(redisUrl: string = 'redis://localhost:6379') {
     this.redis = new Redis(redisUrl, {
       maxRetriesPerRequest: 3,
-      retryDelayOnFailover: 100,
       lazyConnect: true,
     });
 

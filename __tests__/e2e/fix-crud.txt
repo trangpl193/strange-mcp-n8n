@@ -1,0 +1,18 @@
+Line 109: active: true → activate: true
+Line 127: tags: [...] → remove (not supported in WorkflowCreateInput)
+Line 175: result.total → remove assertion (no total in output)
+Line 239: active: false → activate: false  
+Line 246: active: true → activate: true
+Line 254: active: false → activate: false
+Line 271: updateResult.message → updateResult.workflow.name (no message property)
+Line 283: steps: [...] → workflow: { ... } (use workflow parameter)
+Line 323-325: nodeResult.name/type/parameters → nodeResult.node.name/type/parameters
+Line 337: updateResult.message → updateResult.success
+Line 344: nodeResult.parameters → nodeResult.node.parameters
+Line 354: updateResult.message → updateResult.success
+Line 361: nodeResult.name → nodeResult.node.name
+Line 371: disableResult.message → disableResult.success
+Line 378: nodeResult.disabled → nodeResult.node.disabled
+Line 385-386: position_x, position_y → position: [x, y]
+Line 389: updateResult.message → updateResult.success
+Line 396: nodeResult.position → nodeResult.node.position

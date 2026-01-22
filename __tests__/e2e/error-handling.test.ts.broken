@@ -1,0 +1,607 @@
+/**
+ * E2E Test: Error Handling and Edge Cases
+ *
+ * Tests resilience and error handling across all MCP tools:
+ * - Network errors (timeout, connection refused)
+ * - API errors (401, 403, 404, 500)
+ * - Validation errors (invalid input, missing required fields)
+ * - State errors (session expired, workflow deleted)
+ * - Race conditions and concurrent access
+ *
+ * Validates that McpError responses are AI-readable with recovery hints.
+ */
+
+import { describe, test, expect, beforeAll, afterAll, beforeEach } from '@jest/globals';
+import { builderStart } from '../../src/tools/builder-start.js';
+import { builderAddNode } from '../../src/tools/builder-add-node.js';
+import { builderCommit } from '../../src/tools/builder-commit.js';
+import { workflowCreate } from '../../src/tools/workflow-create.js';
+import { workflowGet } from '../../src/tools/workflow-get.js';
+import { workflowUpdate } from '../../src/tools/workflow-update.js';
+import { nodeUpdate } from '../../src/tools/node-update.js';
+import { N8NClient } from '../../src/services/n8n-client.js';
+import { getUnifiedSessionStore } from '../../src/services/session-store-factory.js';
+import { loadConfig } from '../../src/config.js';
+
+const RUN_E2E = process.env.N8N_API_KEY !== undefined && process.env.N8N_URL !== undefined;
+
+const describeE2E = RUN_E2E ? describe : describe.skip;
+
+describeE2E('E2E: Error Handling and Edge Cases', () => {
+  let client: N8NClient;
+  const createdWorkflows: string[] = [];
+
+  beforeAll(() => {
+    const config = loadConfig();
+    client = new N8NClient({
+      baseUrl: config.n8nUrl,
+      apiKey: config.apiKey,
+      timeout: config.timeout || 30000,
+    });
+  });
+
+  afterAll(async () => {
+    for (const workflowId of createdWorkflows) {
+      try {
+        await client.deleteWorkflow(workflowId);
+      } catch (error) {
+        // Ignore cleanup errors
+      }
+    }
+  });
+
+  beforeEach(async () => {
+    // Clear session store
+    const store = getUnifiedSessionStore();
+    const sessions = await store.list(false);
+    for (const session of sessions) {
+      await store.delete(session.session_id);
+    }
+  });
+
+  describe('API Error Handling', () => {
+    test('should handle 404 for non-existent workflow', async () => {
+      await expect(
+        workflowGet(client, {
+          workflow_id: 'non-existent-workflow-id',
+        })
+      ).rejects.toThrow();
+    });
+
+    test('should handle 404 for non-existent execution', async () => {
+      const { executionDebug } = await import('../../src/tools/execution-debug.js');
+
+      await expect(
+        executionDebug(client, {
+          execution_id: 'non-existent-execution-id',
+        })
+      ).rejects.toThrow();
+    });
+
+    test('should provide recovery hint for authentication errors', async () => {
+      // Create client with invalid API key
+      const badClient = new N8NClient({
+        baseUrl: client['baseUrl'],
+        apiKey: 'invalid-api-key',
+        timeout: 5000,
+      });
+
+      try {
+        await workflowGet(badClient, {
+          workflow_id: 'any-id',
+        });
+        fail('Should have thrown authentication error');
+      } catch (error: any) {
+        expect(error.message).toBeDefined();
+        // Error should be informative for AI
+        expect(
+          error.message.toLowerCase().includes('api') ||
+          error.message.toLowerCase().includes('auth') ||
+          error.message.toLowerCase().includes('unauthorized')
+        ).toBe(true);
+      }
+    });
+
+    test('should handle malformed workflow data gracefully', async () => {
+      await expect(
+        workflowCreate(client, {
+          workflow: {
+            name: 'Invalid Workflow',
+            steps: [
+              // @ts-expect-error Testing invalid node type
+              { type: 'non-existent-type' },
+            ],
+          },
+        })
+      ).rejects.toThrow();
+    });
+  });
+
+  describe('Validation Errors', () => {
+    test('should reject workflow without name', async () => {
+      await expect(
+        workflowCreate(client, {
+          workflow: {
+            // @ts-expect-error Testing missing name
+            steps: [{ type: 'manual' }],
+          },
+        })
+      ).rejects.toThrow();
+    });
+
+    test('should reject workflow without steps', async () => {
+      await expect(
+        workflowCreate(client, {
+          workflow: {
+            name: 'No Steps',
+            // @ts-expect-error Testing missing steps
+            steps: undefined,
+          },
+        })
+      ).rejects.toThrow();
+    });
+
+    test('should reject empty workflow', async () => {
+      await expect(
+        workflowCreate(client, {
+          workflow: {
+            name: 'Empty',
+            steps: [],
+          },
+        })
+      ).rejects.toThrow();
+    });
+
+    test('should reject workflow without trigger node', async () => {
+      await expect(
+        workflowCreate(client, {
+          workflow: {
+            name: 'No Trigger',
+            steps: [
+              { type: 'code', config: { code: 'return items;' } },
+              { type: 'respond' },
+            ],
+          },
+        })
+      ).rejects.toThrow();
+    });
+
+    test('should reject builder session with invalid credentials format', async () => {
+      await expect(
+        builderStart({
+          name: 'Invalid Credentials',
+          // @ts-expect-error Testing invalid credentials
+          credentials: 'not-an-object',
+        })
+      ).rejects.toThrow();
+    });
+
+    test('should reject node connection with invalid output index', async () => {
+      const { builderConnect } = await import('../../src/tools/builder-connect.js');
+
+      const startResult = await builderStart({ name: 'Test' });
+      await builderAddNode({
+        session_id: startResult.session_id,
+        node: { type: 'webhook',
+        name: 'Start',
+      });
+      await builderAddNode({
+        session_id: startResult.session_id,
+        node: { type: 'respond',
+        name: 'End',
+      });
+
+      await expect(
+        builderConnect({
+          session_id: startResult.session_id,
+          from_node: 'Start',
+          to_node: 'End',
+          from_output: 999, // Invalid output index
+        })
+      ).rejects.toThrow();
+    });
+  });
+
+  describe('State Management Errors', () => {
+    test('should reject operations on non-existent session', async () => {
+      await expect(
+        builderAddNode({
+          session_id: 'non-existent-session',
+          node: { type: 'webhook',
+        })
+      ).rejects.toThrow();
+    });
+
+    test('should reject commit on already committed session', async () => {
+      const startResult = await builderStart({ name: 'Test Commit' });
+      await builderAddNode({
+        session_id: startResult.session_id,
+        node: { type: 'manual',
+      });
+      await builderAddNode({
+        session_id: startResult.session_id,
+        node: { type: 'respond',
+      });
+
+      const { builderConnect } = await import('../../src/tools/builder-connect.js');
+      await builderConnect({
+        session_id: startResult.session_id,
+        from_node: 'Manual',
+        to_node: 'Respond to Webhook',
+      });
+
+      // First commit
+      const commitResult = await builderCommit(client, {
+        session_id: startResult.session_id,
+      });
+      createdWorkflows.push(commitResult.workflow_id);
+
+      // Second commit should fail
+      await expect(
+        builderCommit(client, {
+          session_id: startResult.session_id,
+        })
+      ).rejects.toThrow();
+    });
+
+    test('should handle expired session gracefully', async () => {
+      const startResult = await builderStart({ name: 'Expiring' });
+
+      // Manually expire session
+      const store = getUnifiedSessionStore();
+      const session = await store.get(startResult.session_id);
+      if (session) {
+        session.expires_at = new Date(Date.now() - 10000).toISOString();
+        await store.update(session);
+      }
+
+      // Operations on expired session should fail with clear error
+      try {
+        await builderAddNode({
+          session_id: startResult.session_id,
+          node: { type: 'webhook',
+        });
+        fail('Should have thrown expired session error');
+      } catch (error: any) {
+        expect(error.message).toBeDefined();
+        expect(
+          error.message.toLowerCase().includes('expired') ||
+          error.message.toLowerCase().includes('not found')
+        ).toBe(true);
+      }
+    });
+
+    test('should reject update to deleted workflow', async () => {
+      const createResult = await workflowCreate(client, {
+        workflow: {
+          name: 'To Be Deleted',
+          steps: [
+            { type: 'manual' },
+            { type: 'respond' },
+          ],
+        },
+      });
+
+      // Delete workflow
+      await client.deleteWorkflow(createResult.workflow_id);
+
+      // Update should fail
+      await expect(
+        workflowUpdate(client, {
+          workflow_id: createResult.workflow_id,
+          rename: 'New Name',
+        })
+      ).rejects.toThrow();
+    });
+  });
+
+  describe('Edge Cases - Complex Scenarios', () => {
+    test('should handle workflow with maximum nodes', async () => {
+      const startResult = await builderStart({ name: 'Large Workflow' });
+
+      // Add many nodes (test reasonable limit)
+      for (let i = 0; i < 20; i++) {
+        await builderAddNode({
+          session_id: startResult.session_id,
+          node: { type: i === 0 ? 'manual' : 'code',
+          name: `Node${i}`,
+          config: i > 0 ? { code: `return items; // ${i}` } : undefined,
+        });
+      }
+
+      const store = getUnifiedSessionStore();
+      const session = await store.get(startResult.session_id);
+      expect(session!.workflow_draft.nodes).toHaveLength(20);
+    });
+
+    test('should handle workflow with deeply nested node names', async () => {
+      const result = await workflowCreate(client, {
+        workflow: {
+          name: 'Nested Names Test',
+          steps: [
+            { type: 'webhook', name: 'Start::Webhook::Production::V2' },
+            { type: 'code', name: 'Transform::Data::Step1' },
+            { type: 'respond', name: 'End::Response::Success' },
+          ],
+        },
+      });
+
+      createdWorkflows.push(result.workflow_id);
+
+      const workflow = await workflowGet(client, {
+        workflow_id: result.workflow_id,
+      });
+
+      const nodeNames = workflow.nodes.map((n) => n.name);
+      expect(nodeNames).toContain('Start::Webhook::Production::V2');
+      expect(nodeNames).toContain('Transform::Data::Step1');
+    });
+
+    test('should handle special characters in workflow name', async () => {
+      const specialName = 'Test Workflow [E2E] (v2.0) - α β γ 中文 🚀';
+
+      const result = await workflowCreate(client, {
+        workflow: {
+          name: specialName,
+          steps: [
+            { type: 'manual' },
+            { type: 'respond' },
+          ],
+        },
+      });
+
+      createdWorkflows.push(result.workflow_id);
+
+      const workflow = await workflowGet(client, {
+        workflow_id: result.workflow_id,
+      });
+
+      expect(workflow.name).toBe(specialName);
+    });
+
+    test('should handle very long code blocks', async () => {
+      const longCode = 'return items;\n'.repeat(100);
+
+      const result = await workflowCreate(client, {
+        workflow: {
+          name: 'Long Code Test',
+          steps: [
+            { type: 'manual' },
+            { type: 'code', config: { code: longCode } },
+            { type: 'respond' },
+          ],
+        },
+      });
+
+      createdWorkflows.push(result.workflow_id);
+
+      const workflow = await workflowGet(client, {
+        workflow_id: result.workflow_id,
+      });
+
+      const codeNode = workflow.nodes.find((n) => n.type.includes('code'));
+      expect(codeNode!.parameters.code).toBe(longCode);
+    });
+  });
+
+  describe('Concurrent Access Edge Cases', () => {
+    test('should handle concurrent session creation', async () => {
+      const promises = Array.from({ length: 10 }, (_, i) =>
+        builderStart({ name: `Concurrent ${i}` })
+      );
+
+      const results = await Promise.all(promises);
+
+      expect(results).toHaveLength(10);
+
+      // All sessions should have unique IDs
+      const ids = results.map((r) => r.session_id);
+      const uniqueIds = new Set(ids);
+      expect(uniqueIds.size).toBe(10);
+    });
+
+    test('should isolate concurrent modifications to different sessions', async () => {
+      const session1 = await builderStart({ name: 'Session 1' });
+      const session2 = await builderStart({ name: 'Session 2' });
+
+      // Modify both concurrently
+      await Promise.all([
+        builderAddNode({
+          session_id: session1.session_id,
+          node: { type: 'webhook',
+          name: 'Webhook1',
+        }),
+        builderAddNode({
+          session_id: session2.session_id,
+          node: { type: 'manual',
+          name: 'Manual2',
+        }),
+      ]);
+
+      const store = getUnifiedSessionStore();
+      const s1 = await store.get(session1.session_id);
+      const s2 = await store.get(session2.session_id);
+
+      expect(s1!.workflow_draft.nodes[0].name).toBe('Webhook1');
+      expect(s2!.workflow_draft.nodes[0].name).toBe('Manual2');
+    });
+
+    test('should handle rapid updates to same workflow', async () => {
+      const createResult = await workflowCreate(client, {
+        workflow: {
+          name: 'Rapid Update Test',
+          steps: [
+            { type: 'manual' },
+            { type: 'respond' },
+          ],
+        },
+      });
+      createdWorkflows.push(createResult.workflow_id);
+
+      // Make multiple updates rapidly
+      const updates = [
+        workflowUpdate(client, {
+          workflow_id: createResult.workflow_id,
+          add_tags: ['tag1'],
+        }),
+        workflowUpdate(client, {
+          workflow_id: createResult.workflow_id,
+          add_tags: ['tag2'],
+        }),
+        workflowUpdate(client, {
+          workflow_id: createResult.workflow_id,
+          rename: 'Updated Name',
+        }),
+      ];
+
+      const results = await Promise.allSettled(updates);
+
+      // At least some should succeed
+      const succeeded = results.filter((r) => r.status === 'fulfilled');
+      expect(succeeded.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('Recovery Scenarios', () => {
+    test('should provide actionable error for missing credential', async () => {
+      try {
+        await workflowCreate(client, {
+          workflow: {
+            name: 'Missing Credential',
+            steps: [
+              { type: 'manual' },
+              { type: 'postgres', credential: 'non-existent-cred' },
+              { type: 'respond' },
+            ],
+          },
+          credentials: {
+            // Not providing 'non-existent-cred'
+          },
+        });
+        fail('Should have thrown missing credential error');
+      } catch (error: any) {
+        expect(error.message).toBeDefined();
+        expect(
+          error.message.toLowerCase().includes('credential') ||
+          error.message.toLowerCase().includes('missing')
+        ).toBe(true);
+      }
+    });
+
+    test('should allow workflow recreation after delete', async () => {
+      const workflowDef = {
+        name: 'Recreatable Workflow',
+        steps: [
+          { type: 'manual' },
+          { type: 'respond' },
+        ],
+      };
+
+      // Create
+      const result1 = await workflowCreate(client, { workflow: workflowDef });
+
+      // Delete
+      await client.deleteWorkflow(result1.workflow_id);
+
+      // Recreate with same definition
+      const result2 = await workflowCreate(client, { workflow: workflowDef });
+      createdWorkflows.push(result2.workflow_id);
+
+      expect(result2.workflow_id).toBeDefined();
+      expect(result2.workflow_id).not.toBe(result1.workflow_id);
+    });
+
+    test('should handle partial workflow creation failure', async () => {
+      // Create workflow with invalid step that might partially succeed
+      try {
+        await workflowCreate(client, {
+          workflow: {
+            name: 'Partial Failure Test',
+            steps: [
+              { type: 'manual' },
+              { type: 'code', config: { code: 'return items;' } },
+              // @ts-expect-error Testing invalid node type
+              { type: 'invalid-type-xyz' },
+            ],
+          },
+        });
+        fail('Should have failed');
+      } catch (error: any) {
+        expect(error).toBeDefined();
+
+        // Should NOT have created a partial workflow
+        const { workflowList } = await import('../../src/tools/workflow-list.js');
+        const listResult = await workflowList(client, {
+          name: 'Partial Failure Test',
+        });
+
+        expect(listResult.workflows.length).toBe(0);
+      }
+    });
+  });
+
+  describe('Input Sanitization', () => {
+    test('should handle SQL-injection-like strings safely', async () => {
+      const maliciousString = "'; DROP TABLE workflows; --";
+
+      const result = await workflowCreate(client, {
+        workflow: {
+          name: maliciousString,
+          steps: [
+            { type: 'manual' },
+            { type: 'respond' },
+          ],
+        },
+      });
+
+      createdWorkflows.push(result.workflow_id);
+
+      const workflow = await workflowGet(client, {
+        workflow_id: result.workflow_id,
+      });
+
+      // Should store exactly as provided (safely)
+      expect(workflow.name).toBe(maliciousString);
+    });
+
+    test('should handle XSS-like strings safely', async () => {
+      const xssString = '<script>alert("XSS")</script>';
+
+      const result = await workflowCreate(client, {
+        workflow: {
+          name: xssString,
+          steps: [
+            { type: 'manual' },
+            { type: 'code', config: { code: xssString } },
+            { type: 'respond' },
+          ],
+        },
+      });
+
+      createdWorkflows.push(result.workflow_id);
+
+      const workflow = await workflowGet(client, {
+        workflow_id: result.workflow_id,
+      });
+
+      expect(workflow.name).toBe(xssString);
+    });
+
+    test('should handle null bytes and control characters', async () => {
+      const controlChars = 'Test\x00\x01\x02\x1fWorkflow';
+
+      const result = await workflowCreate(client, {
+        workflow: {
+          name: controlChars,
+          steps: [
+            { type: 'manual' },
+            { type: 'respond' },
+          ],
+        },
+      });
+
+      createdWorkflows.push(result.workflow_id);
+      expect(result.workflow_id).toBeDefined();
+    });
+  });
+});

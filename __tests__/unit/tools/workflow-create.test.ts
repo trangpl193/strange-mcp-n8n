@@ -60,9 +60,11 @@ describe('workflow_create', () => {
     });
 
     expect(result.active).toBe(true);
+    // Note: N8N API doesn't accept 'active' on creation, workflow is activated separately
     expect(mockClient.createWorkflow).toHaveBeenCalledWith(
       expect.objectContaining({
-        active: true,
+        name: 'Active Workflow',
+        nodes: expect.any(Array),
       })
     );
   });
@@ -71,6 +73,7 @@ describe('workflow_create', () => {
     const workflowWithCred = {
       name: 'Workflow with Creds',
       steps: [
+        { type: 'manual' },
         { type: 'postgres', credential: 'prod-db', config: { operation: 'select' } },
       ],
     };
@@ -117,6 +120,7 @@ describe('workflow_create', () => {
     const workflowWithCred = {
       name: 'Missing Cred Workflow',
       steps: [
+        { type: 'manual' },
         { type: 'postgres', credential: 'missing-db' },
       ],
     };
@@ -145,9 +149,11 @@ describe('workflow_create', () => {
       workflow: { name: 'Default', steps: [{ type: 'manual' }] },
     });
 
+    // N8N API doesn't accept 'active' field on creation
     expect(mockClient.createWorkflow).toHaveBeenCalledWith(
       expect.objectContaining({
-        active: false,
+        name: 'Default',
+        nodes: expect.any(Array),
       })
     );
   });

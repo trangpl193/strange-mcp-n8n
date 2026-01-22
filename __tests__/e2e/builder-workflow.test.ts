@@ -1,0 +1,456 @@
+/**
+ * E2E Test: Builder Workflow (Session-Based)
+ *
+ * Tests the complete builder pattern lifecycle:
+ * 1. Start session
+ * 2. Add nodes incrementally
+ * 3. Connect nodes
+ * 4. Commit to N8N
+ * 5. Verify workflow execution
+ *
+ * This tests the "Blind Box Problem" solution where sessions are discoverable.
+ */
+
+import { describe, test, expect, beforeAll, afterAll, beforeEach } from '@jest/globals';
+import { builderStart } from '../../src/tools/builder-start.js';
+import { builderAddNode } from '../../src/tools/builder-add-node.js';
+import { builderConnect } from '../../src/tools/builder-connect.js';
+import { builderCommit } from '../../src/tools/builder-commit.js';
+import { builderList } from '../../src/tools/builder-list.js';
+import { builderDiscard } from '../../src/tools/builder-discard.js';
+import { workflowGet } from '../../src/tools/workflow-get.js';
+import { N8NClient } from '../../src/services/n8n-client.js';
+import { getUnifiedSessionStore } from '../../src/services/session-store-factory.js';
+import { loadConfig } from '../../src/config.js';
+
+// Skip if no N8N credentials
+const RUN_E2E = process.env.N8N_API_KEY !== undefined && process.env.N8N_URL !== undefined;
+
+const describeE2E = RUN_E2E ? describe : describe.skip;
+
+describeE2E('E2E: Builder Workflow (Session-Based)', () => {
+  let client: N8NClient;
+  const createdWorkflows: string[] = [];
+
+  beforeAll(() => {
+    const config = loadConfig();
+    client = new N8NClient({
+      baseUrl: config.n8nUrl,
+      apiKey: config.apiKey,
+      timeout: config.timeout || 30000,
+    });
+  });
+
+  afterAll(async () => {
+    // Cleanup all created workflows
+    for (const workflowId of createdWorkflows) {
+      try {
+        await client.deleteWorkflow(workflowId);
+      } catch (error) {
+        console.warn(`Failed to cleanup workflow ${workflowId}:`, error);
+      }
+    }
+  });
+
+  beforeEach(async () => {
+    // Clear session store before each test
+    const store = getUnifiedSessionStore();
+    const sessions = await store.list(false);
+    for (const session of sessions) {
+      await store.delete(session.session_id);
+    }
+  });
+
+  describe('Complete Builder Lifecycle', () => {
+    test('should build simple webhook workflow step-by-step', async () => {
+      // STEP 1: Start session
+      const startResult = await builderStart({
+        name: 'E2E Builder Test: Simple Webhook',
+        description: 'Test building a simple webhook workflow',
+        credentials: {},
+      });
+
+      expect(startResult.session_id).toBeDefined();
+      expect(startResult.name).toBe('E2E Builder Test: Simple Webhook');
+      expect(startResult.ttl_seconds).toBeGreaterThan(0);
+
+      const sessionId = startResult.session_id;
+
+      // STEP 2: Add webhook trigger
+      const webhookResult = await builderAddNode({
+        session_id: sessionId,
+        node: {
+          type: 'webhook',
+          name: 'Start',
+          config: { path: '/e2e-test', httpMethod: 'POST' },
+        },
+      });
+
+      expect(webhookResult.node_name).toBe('Start');
+      expect(webhookResult.nodes_count).toBe(1);
+
+      // STEP 3: Add respond node
+      const respondResult = await builderAddNode({
+        session_id: sessionId,
+        node: {
+          type: 'respond',
+          name: 'Success',
+          config: { statusCode: 200 },
+        },
+      });
+
+      expect(respondResult.node_name).toBe('Success');
+      expect(respondResult.nodes_count).toBe(2);
+
+      // STEP 4: Connect nodes
+      const connectResult = await builderConnect({
+        session_id: sessionId,
+        from_node: 'Start',
+        to_node: 'Success',
+      });
+
+      expect(connectResult.connection.from).toBe('Start');
+      expect(connectResult.connection.to).toBe('Success');
+
+      // STEP 5: Commit to N8N
+      const commitResult = await builderCommit(client, {
+        session_id: sessionId,
+        activate: false,
+      });
+
+      expect(commitResult.workflow.id).toBeDefined();
+      expect(commitResult.workflow.nodes_count).toBe(2);
+      createdWorkflows.push(commitResult.workflow.id);
+
+      // STEP 6: Verify workflow in N8N
+      const workflowResult = await workflowGet(client, {
+        workflow_id: commitResult.workflow.id,
+      });
+
+      expect(workflowResult.name).toBe('E2E Builder Test: Simple Webhook');
+      expect(workflowResult.nodes).toHaveLength(2);
+      expect(workflowResult.active).toBe(false);
+
+      // Verify node types
+      const nodeTypes = workflowResult.nodes.map((n) => n.type);
+      expect(nodeTypes).toContain('n8n-nodes-base.webhook');
+      expect(nodeTypes).toContain('n8n-nodes-base.respondToWebhook');
+    });
+
+    test('should build complex multi-step workflow with branching', async () => {
+      // Start session
+      const startResult = await builderStart({
+        name: 'E2E Builder Test: Branching Logic',
+        credentials: {},
+      });
+
+      const sessionId = startResult.session_id;
+
+      // Add manual trigger
+      await builderAddNode({
+        session_id: sessionId,
+        node: { type: 'manual', name: 'Trigger' },
+      });
+
+      // Add code node
+      await builderAddNode({
+        session_id: sessionId,
+        node: {
+          type: 'code',
+          name: 'Generate Data',
+          config: { code: 'return [{ value: Math.random() }];' },
+        },
+      });
+
+      // Add IF node
+      await builderAddNode({
+        session_id: sessionId,
+        node: { type: 'if', name: 'Check Value' },
+      });
+
+      // Add respond nodes for both branches
+      await builderAddNode({
+        session_id: sessionId,
+        node: { type: 'respond', name: 'High Value', config: { statusCode: 200 } },
+      });
+
+      await builderAddNode({
+        session_id: sessionId,
+        node: { type: 'respond', name: 'Low Value', config: { statusCode: 200 } },
+      });
+
+      // Connect nodes
+      await builderConnect({
+        session_id: sessionId,
+        from_node: 'Trigger',
+        to_node: 'Generate Data',
+      });
+
+      await builderConnect({
+        session_id: sessionId,
+        from_node: 'Generate Data',
+        to_node: 'Check Value',
+      });
+
+      await builderConnect({
+        session_id: sessionId,
+        from_node: 'Check Value',
+        to_node: 'High Value',
+        from_output: 0,
+      });
+
+      await builderConnect({
+        session_id: sessionId,
+        from_node: 'Check Value',
+        to_node: 'Low Value',
+        from_output: 1,
+      });
+
+      // Commit
+      const commitResult = await builderCommit(client, {
+        session_id: sessionId,
+        activate: false,
+      });
+
+      createdWorkflows.push(commitResult.workflow.id);
+
+      // Verify workflow structure
+      const workflow = await workflowGet(client, {
+        workflow_id: commitResult.workflow.id,
+      });
+
+      expect(workflow.nodes).toHaveLength(5);
+
+      // Verify connections include branching
+      expect(workflow.connections).toBeDefined();
+    });
+  });
+
+  describe('Session Discovery (Blind Box Problem)', () => {
+    test('should list active builder sessions', async () => {
+      // Create multiple sessions
+      const session1 = await builderStart({
+        name: 'Session 1',
+      });
+
+      const session2 = await builderStart({
+        name: 'Session 2',
+      });
+
+      // Add nodes to differentiate
+      await builderAddNode({
+        session_id: session1.session_id,
+        node: { type: 'webhook' },
+      });
+
+      await builderAddNode({
+        session_id: session2.session_id,
+        node: { type: 'manual' },
+      });
+
+      await builderAddNode({
+        session_id: session2.session_id,
+        node: { type: 'respond' },
+      });
+
+      // List sessions
+      const listResult = await builderList({
+        include_expired: false,
+      });
+
+      expect(listResult.drafts.length).toBeGreaterThanOrEqual(2);
+
+      const session1Summary = listResult.drafts.find(
+        (s) => s.session_id === session1.session_id
+      );
+      const session2Summary = listResult.drafts.find(
+        (s) => s.session_id === session2.session_id
+      );
+
+      expect(session1Summary).toBeDefined();
+      expect(session1Summary!.nodes_count).toBe(1);
+      expect(session1Summary!.preview.trigger_type).toBe('webhook');
+
+      expect(session2Summary).toBeDefined();
+      expect(session2Summary!.nodes_count).toBe(2);
+      expect(session2Summary!.preview.trigger_type).toBe('manual');
+    });
+
+    test('should handle session expiration', async () => {
+      // Create session
+      const startResult = await builderStart({
+        name: 'Expiring Session',
+      });
+
+      // Manually expire the session by modifying store
+      const store = getUnifiedSessionStore();
+      const session = await store.get(startResult.session_id);
+      if (session) {
+        session.expires_at = new Date(Date.now() - 1000).toISOString(); // Expired 1s ago
+        await store.update(session);
+      }
+
+      // List should show it as expired
+      const listResult = await builderList({
+        include_expired: true,
+      });
+
+      const expiredSession = listResult.drafts.find(
+        (s) => s.session_id === startResult.session_id
+      );
+
+      expect(expiredSession).toBeDefined();
+      expect(expiredSession!.status).toBe('expired');
+    });
+  });
+
+  describe('Session Management', () => {
+    test('should discard session without committing', async () => {
+      // Start session
+      const startResult = await builderStart({
+        name: 'Discard Test',
+      });
+
+      // Add nodes
+      await builderAddNode({
+        session_id: startResult.session_id,
+        node: { type: 'webhook' },
+      });
+
+      // Discard
+      const discardResult = await builderDiscard({
+        session_id: startResult.session_id,
+      });
+
+      expect(discardResult.message).toContain('discarded');
+
+      // Verify session is removed
+      const store = getUnifiedSessionStore();
+      const session = await store.get(startResult.session_id);
+      expect(session).toBeNull();
+    });
+
+    test('should prevent operations on committed session', async () => {
+      // Start and commit
+      const startResult = await builderStart({
+        name: 'Committed Session',
+      });
+
+      await builderAddNode({
+        session_id: startResult.session_id,
+        node: { type: 'manual' },
+      });
+
+      await builderAddNode({
+        session_id: startResult.session_id,
+        node: { type: 'respond' },
+      });
+
+      await builderConnect({
+        session_id: startResult.session_id,
+        from_node: 'Manual',
+        to_node: 'Respond to Webhook',
+      });
+
+      const commitResult = await builderCommit(client, {
+        session_id: startResult.session_id,
+        activate: false,
+      });
+
+      createdWorkflows.push(commitResult.workflow.id);
+
+      // Try to add node to committed session
+      await expect(
+        builderAddNode({
+          session_id: startResult.session_id,
+          node: { type: 'code' },
+        })
+      ).rejects.toThrow();
+    });
+
+    test('should handle concurrent sessions independently', async () => {
+      // Create two concurrent sessions
+      const session1 = await builderStart({
+        name: 'Concurrent 1',
+      });
+
+      const session2 = await builderStart({
+        name: 'Concurrent 2',
+      });
+
+      // Modify both independently
+      await builderAddNode({
+        session_id: session1.session_id,
+        node: { type: 'webhook', name: 'Webhook1' },
+      });
+
+      await builderAddNode({
+        session_id: session2.session_id,
+        node: { type: 'manual', name: 'Manual2' },
+      });
+
+      // Verify isolation
+      const store = getUnifiedSessionStore();
+      const s1 = await store.get(session1.session_id);
+      const s2 = await store.get(session2.session_id);
+
+      expect(s1!.workflow_draft.nodes).toHaveLength(1);
+      expect(s1!.workflow_draft.nodes[0].name).toBe('Webhook1');
+
+      expect(s2!.workflow_draft.nodes).toHaveLength(1);
+      expect(s2!.workflow_draft.nodes[0].name).toBe('Manual2');
+    });
+  });
+
+  describe('Error Handling', () => {
+    test('should reject invalid node type', async () => {
+      const startResult = await builderStart({
+        name: 'Error Test',
+      });
+
+      await expect(
+        builderAddNode({
+          session_id: startResult.session_id,
+          node: { type: 'invalid_node_type' as any },
+        })
+      ).rejects.toThrow();
+    });
+
+    test('should reject connection to non-existent node', async () => {
+      const startResult = await builderStart({
+        name: 'Connection Error Test',
+      });
+
+      await builderAddNode({
+        session_id: startResult.session_id,
+        node: { type: 'webhook', name: 'Start' },
+      });
+
+      await expect(
+        builderConnect({
+          session_id: startResult.session_id,
+          from_node: 'Start',
+          to_node: 'NonExistent',
+        })
+      ).rejects.toThrow();
+    });
+
+    test('should reject commit without trigger node', async () => {
+      const startResult = await builderStart({
+        name: 'No Trigger Test',
+      });
+
+      // Add only non-trigger nodes
+      await builderAddNode({
+        session_id: startResult.session_id,
+        node: { type: 'code' },
+      });
+
+      await expect(
+        builderCommit(client, {
+          session_id: startResult.session_id,
+        })
+      ).rejects.toThrow();
+    });
+  });
+});

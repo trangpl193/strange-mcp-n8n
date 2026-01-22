@@ -1,4 +1,4 @@
-import { createMetadataFromStart, ExecutionMetadata } from '@strange/mcp-core';
+import { createMetadataFromStart, ExecutionMetadata, McpError, McpErrorCode } from '@strange/mcp-core';
 import { N8NClient } from '../services/index.js';
 import { WorkflowTransformer } from '../services/workflow-transformer.js';
 import type { SimplifiedWorkflow } from '../schemas/simplified-workflow.js';
@@ -27,6 +27,25 @@ export async function workflowCreate(
   input: WorkflowCreateInput
 ): Promise<WorkflowCreateOutput> {
   const startTime = Date.now();
+
+  // Validate workflow has at least one trigger node
+  const triggerTypes = ['webhook', 'schedule', 'manual'];
+  const hasTrigger = input.workflow.steps.some(step =>
+    triggerTypes.includes(step.type.toLowerCase())
+  );
+
+  if (!hasTrigger) {
+    throw new McpError(
+      McpErrorCode.INVALID_PARAMS,
+      'Workflow must have at least one trigger node (webhook, schedule, or manual)',
+      {
+        details: {
+          availableTriggers: triggerTypes,
+          providedSteps: input.workflow.steps.map(s => s.type),
+        },
+      }
+    );
+  }
 
   // Build credential map
   const credentialMap = new Map<string, string>();

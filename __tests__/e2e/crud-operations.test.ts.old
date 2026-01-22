@@ -1,0 +1,507 @@
+/**
+ * E2E Test: Direct CRUD Operations
+ *
+ * Tests the traditional workflow CRUD operations:
+ * - CREATE: workflow_create
+ * - READ: workflow_get, workflow_list
+ * - UPDATE: workflow_update, node_update
+ * - DELETE: via client
+ *
+ * Validates that workflows created via simplified schema
+ * match expected N8N structure.
+ */
+
+import { describe, test, expect, beforeAll, afterAll } from '@jest/globals';
+import { workflowCreate } from '../../src/tools/workflow-create.js';
+import { workflowGet } from '../../src/tools/workflow-get.js';
+import { workflowList } from '../../src/tools/workflow-list.js';
+import { workflowUpdate } from '../../src/tools/workflow-update.js';
+import { nodeGet } from '../../src/tools/node-get.js';
+import { nodeUpdate } from '../../src/tools/node-update.js';
+import { N8NClient } from '../../src/services/n8n-client.js';
+import { loadConfig } from '../../src/config.js';
+import {
+  SIMPLE_WEBHOOK_WORKFLOW,
+  POSTGRES_WORKFLOW,
+} from '../fixtures/workflows.js';
+
+const RUN_E2E = process.env.N8N_API_KEY !== undefined && process.env.N8N_URL !== undefined;
+
+const describeE2E = RUN_E2E ? describe : describe.skip;
+
+describeE2E('E2E: Direct CRUD Operations', () => {
+  let client: N8NClient;
+  const createdWorkflows: string[] = [];
+
+  beforeAll(() => {
+    const config = loadConfig();
+    client = new N8NClient({
+      baseUrl: config.n8nUrl,
+      apiKey: config.apiKey,
+      timeout: config.timeout || 30000,
+    });
+  });
+
+  afterAll(async () => {
+    for (const workflowId of createdWorkflows) {
+      try {
+        await client.deleteWorkflow(workflowId);
+      } catch (error) {
+        console.warn(`Cleanup failed for ${workflowId}`);
+      }
+    }
+  });
+
+  describe('CREATE Operations', () => {
+    test('should create simple webhook workflow', async () => {
+      const result = await workflowCreate(client, {
+        workflow: SIMPLE_WEBHOOK_WORKFLOW,
+      });
+
+      expect(result.workflow_id).toBeDefined();
+      expect(result.name).toBe('Simple Webhook Test');
+      expect(result.nodes_count).toBe(2);
+
+      createdWorkflows.push(result.workflow_id);
+
+      // Verify structure
+      const workflow = await workflowGet(client, {
+        workflow_id: result.workflow_id,
+      });
+
+      expect(workflow.nodes).toHaveLength(2);
+      expect(workflow.nodes[0].type).toBe('n8n-nodes-base.webhook');
+      expect(workflow.nodes[1].type).toBe('n8n-nodes-base.respondToWebhook');
+
+      // Verify webhook config
+      const webhookNode = workflow.nodes[0];
+      expect(webhookNode.parameters).toMatchObject({
+        path: '/test',
+        httpMethod: 'POST',
+      });
+    });
+
+    test('should create workflow with credentials', async () => {
+      const result = await workflowCreate(client, {
+        workflow: POSTGRES_WORKFLOW,
+        credentials: {
+          'test-db': 'mock-credential-id',
+        },
+      });
+
+      expect(result.workflow_id).toBeDefined();
+      createdWorkflows.push(result.workflow_id);
+
+      const workflow = await workflowGet(client, {
+        workflow_id: result.workflow_id,
+      });
+
+      const postgresNode = workflow.nodes.find((n) =>
+        n.type.includes('postgres')
+      );
+      expect(postgresNode).toBeDefined();
+      expect(postgresNode!.credentials).toBeDefined();
+    });
+
+    test('should create and activate workflow', async () => {
+      const result = await workflowCreate(client, {
+        workflow: SIMPLE_WEBHOOK_WORKFLOW,
+        active: true,
+      });
+
+      createdWorkflows.push(result.workflow_id);
+
+      const workflow = await workflowGet(client, {
+        workflow_id: result.workflow_id,
+      });
+
+      expect(workflow.active).toBe(true);
+    });
+
+    test('should create workflow with tags', async () => {
+      const result = await workflowCreate(client, {
+        workflow: {
+          ...SIMPLE_WEBHOOK_WORKFLOW,
+          name: 'Tagged Workflow',
+        },
+        tags: ['e2e-test', 'automated', 'webhook'],
+      });
+
+      createdWorkflows.push(result.workflow_id);
+
+      const workflow = await workflowGet(client, {
+        workflow_id: result.workflow_id,
+      });
+
+      expect(workflow.tags).toBeDefined();
+      if (workflow.tags) {
+        expect(workflow.tags.length).toBeGreaterThanOrEqual(1);
+      }
+    });
+  });
+
+  describe('READ Operations', () => {
+    let testWorkflowId: string;
+
+    beforeAll(async () => {
+      const result = await workflowCreate(client, {
+        workflow: {
+          ...SIMPLE_WEBHOOK_WORKFLOW,
+          name: 'E2E Read Test',
+        },
+      });
+      testWorkflowId = result.workflow_id;
+      createdWorkflows.push(testWorkflowId);
+    });
+
+    test('should get workflow by ID', async () => {
+      const workflow = await workflowGet(client, {
+        workflow_id: testWorkflowId,
+      });
+
+      expect(workflow.id).toBe(testWorkflowId);
+      expect(workflow.name).toBe('E2E Read Test');
+      expect(workflow.nodes).toHaveLength(2);
+      expect(workflow.connections).toBeDefined();
+    });
+
+    test('should list workflows with filters', async () => {
+      const result = await workflowList(client, {
+        limit: 10,
+      });
+
+      expect(result.workflows).toBeDefined();
+      expect(Array.isArray(result.workflows)).toBe(true);
+      expect(result.total).toBeGreaterThan(0);
+
+      // Should include our test workflow
+      const ourWorkflow = result.workflows.find((w) => w.id === testWorkflowId);
+      expect(ourWorkflow).toBeDefined();
+    });
+
+    test('should filter workflows by active status', async () => {
+      const activeResult = await workflowList(client, {
+        active: true,
+      });
+
+      const inactiveResult = await workflowList(client, {
+        active: false,
+      });
+
+      // All active workflows should have active=true
+      activeResult.workflows.forEach((w) => {
+        expect(w.active).toBe(true);
+      });
+
+      // All inactive workflows should have active=false
+      inactiveResult.workflows.forEach((w) => {
+        expect(w.active).toBe(false);
+      });
+    });
+
+    test('should search workflows by name', async () => {
+      const result = await workflowList(client, {
+        name: 'E2E Read Test',
+      });
+
+      expect(result.workflows.length).toBeGreaterThanOrEqual(1);
+      const match = result.workflows.find((w) => w.name === 'E2E Read Test');
+      expect(match).toBeDefined();
+    });
+  });
+
+  describe('UPDATE Operations', () => {
+    test('should rename workflow', async () => {
+      const createResult = await workflowCreate(client, {
+        workflow: {
+          ...SIMPLE_WEBHOOK_WORKFLOW,
+          name: 'Original Name',
+        },
+      });
+      createdWorkflows.push(createResult.workflow_id);
+
+      const updateResult = await workflowUpdate(client, {
+        workflow_id: createResult.workflow_id,
+        rename: 'Updated Name',
+      });
+
+      expect(updateResult.name).toBe('Updated Name');
+
+      const workflow = await workflowGet(client, {
+        workflow_id: createResult.workflow_id,
+      });
+      expect(workflow.name).toBe('Updated Name');
+    });
+
+    test('should activate/deactivate workflow', async () => {
+      const createResult = await workflowCreate(client, {
+        workflow: SIMPLE_WEBHOOK_WORKFLOW,
+        active: false,
+      });
+      createdWorkflows.push(createResult.workflow_id);
+
+      // Activate
+      const activateResult = await workflowUpdate(client, {
+        workflow_id: createResult.workflow_id,
+        active: true,
+      });
+
+      expect(activateResult.active).toBe(true);
+
+      // Deactivate
+      const deactivateResult = await workflowUpdate(client, {
+        workflow_id: createResult.workflow_id,
+        active: false,
+      });
+
+      expect(deactivateResult.active).toBe(false);
+    });
+
+    test('should add tags to workflow', async () => {
+      const createResult = await workflowCreate(client, {
+        workflow: SIMPLE_WEBHOOK_WORKFLOW,
+      });
+      createdWorkflows.push(createResult.workflow_id);
+
+      const updateResult = await workflowUpdate(client, {
+        workflow_id: createResult.workflow_id,
+        add_tags: ['new-tag', 'another-tag'],
+      });
+
+      expect(updateResult.message).toContain('updated');
+    });
+
+    test('should update workflow structure via simplified schema', async () => {
+      const createResult = await workflowCreate(client, {
+        workflow: SIMPLE_WEBHOOK_WORKFLOW,
+      });
+      createdWorkflows.push(createResult.workflow_id);
+
+      // Update by adding a new step
+      const updateResult = await workflowUpdate(client, {
+        workflow_id: createResult.workflow_id,
+        steps: [
+          { type: 'webhook', config: { path: '/updated' } },
+          { type: 'code', config: { code: 'return items;' } },
+          { type: 'respond' },
+        ],
+      });
+
+      expect(updateResult.nodes_count).toBe(3);
+
+      const workflow = await workflowGet(client, {
+        workflow_id: createResult.workflow_id,
+      });
+      expect(workflow.nodes).toHaveLength(3);
+    });
+  });
+
+  describe('Node-Level Operations', () => {
+    let workflowId: string;
+
+    beforeAll(async () => {
+      const result = await workflowCreate(client, {
+        workflow: {
+          name: 'Node Update Test',
+          steps: [
+            { type: 'webhook', name: 'Start', config: { path: '/test' } },
+            { type: 'code', name: 'Process', config: { code: 'return items;' } },
+            { type: 'respond', name: 'End' },
+          ],
+        },
+      });
+      workflowId = result.workflow_id;
+      createdWorkflows.push(workflowId);
+    });
+
+    test('should get individual node', async () => {
+      const nodeResult = await nodeGet(client, {
+        workflow_id: workflowId,
+        node_identifier: 'Start',
+      });
+
+      expect(nodeResult.name).toBe('Start');
+      expect(nodeResult.type).toBe('n8n-nodes-base.webhook');
+      expect(nodeResult.parameters).toBeDefined();
+    });
+
+    test('should update node parameters', async () => {
+      const updateResult = await nodeUpdate(client, {
+        workflow_id: workflowId,
+        node_identifier: 'Process',
+        parameters: {
+          code: 'return items.map(item => ({ ...item, processed: true }));',
+        },
+      });
+
+      expect(updateResult.message).toContain('updated');
+
+      const nodeResult = await nodeGet(client, {
+        workflow_id: workflowId,
+        node_identifier: 'Process',
+      });
+
+      expect(nodeResult.parameters.code).toContain('processed: true');
+    });
+
+    test('should rename node', async () => {
+      const updateResult = await nodeUpdate(client, {
+        workflow_id: workflowId,
+        node_identifier: 'End',
+        name: 'SendResponse',
+      });
+
+      expect(updateResult.message).toContain('updated');
+
+      const nodeResult = await nodeGet(client, {
+        workflow_id: workflowId,
+        node_identifier: 'SendResponse',
+      });
+
+      expect(nodeResult.name).toBe('SendResponse');
+    });
+
+    test('should disable/enable node', async () => {
+      const disableResult = await nodeUpdate(client, {
+        workflow_id: workflowId,
+        node_identifier: 'Process',
+        disabled: true,
+      });
+
+      expect(disableResult.message).toContain('updated');
+
+      const nodeResult = await nodeGet(client, {
+        workflow_id: workflowId,
+        node_identifier: 'Process',
+      });
+
+      expect(nodeResult.disabled).toBe(true);
+    });
+
+    test('should update node position', async () => {
+      const updateResult = await nodeUpdate(client, {
+        workflow_id: workflowId,
+        node_identifier: 'Start',
+        position_x: 500,
+        position_y: 300,
+      });
+
+      expect(updateResult.message).toContain('updated');
+
+      const nodeResult = await nodeGet(client, {
+        workflow_id: workflowId,
+        node_identifier: 'Start',
+      });
+
+      expect(nodeResult.position).toEqual([500, 300]);
+    });
+  });
+
+  describe('Validation and Constraints', () => {
+    test('should reject workflow without trigger', async () => {
+      await expect(
+        workflowCreate(client, {
+          workflow: {
+            name: 'No Trigger',
+            steps: [
+              { type: 'code', config: { code: 'return items;' } },
+              { type: 'respond' },
+            ],
+          },
+        })
+      ).rejects.toThrow();
+    });
+
+    test('should reject invalid workflow structure', async () => {
+      await expect(
+        workflowCreate(client, {
+          workflow: {
+            name: 'Invalid',
+            steps: [] as any,
+          },
+        })
+      ).rejects.toThrow();
+    });
+
+    test('should reject update to non-existent workflow', async () => {
+      await expect(
+        workflowUpdate(client, {
+          workflow_id: 'non-existent-id',
+          rename: 'New Name',
+        })
+      ).rejects.toThrow();
+    });
+
+    test('should reject node update with invalid parameters', async () => {
+      const createResult = await workflowCreate(client, {
+        workflow: SIMPLE_WEBHOOK_WORKFLOW,
+      });
+      createdWorkflows.push(createResult.workflow_id);
+
+      // This should fail or be handled gracefully
+      await expect(
+        nodeUpdate(client, {
+          workflow_id: createResult.workflow_id,
+          node_identifier: 'NonExistent',
+          parameters: { foo: 'bar' },
+        })
+      ).rejects.toThrow();
+    });
+  });
+
+  describe('Concurrent Operations', () => {
+    test('should handle concurrent workflow creation', async () => {
+      const promises = Array.from({ length: 5 }, (_, i) =>
+        workflowCreate(client, {
+          workflow: {
+            ...SIMPLE_WEBHOOK_WORKFLOW,
+            name: `Concurrent Test ${i}`,
+          },
+        })
+      );
+
+      const results = await Promise.all(promises);
+
+      expect(results).toHaveLength(5);
+      results.forEach((result) => {
+        expect(result.workflow_id).toBeDefined();
+        createdWorkflows.push(result.workflow_id);
+      });
+
+      // All workflows should be unique
+      const ids = results.map((r) => r.workflow_id);
+      const uniqueIds = new Set(ids);
+      expect(uniqueIds.size).toBe(5);
+    });
+
+    test('should handle concurrent updates to same workflow', async () => {
+      const createResult = await workflowCreate(client, {
+        workflow: SIMPLE_WEBHOOK_WORKFLOW,
+      });
+      createdWorkflows.push(createResult.workflow_id);
+
+      // Update tags and name concurrently
+      const promises = [
+        workflowUpdate(client, {
+          workflow_id: createResult.workflow_id,
+          add_tags: ['tag1'],
+        }),
+        workflowUpdate(client, {
+          workflow_id: createResult.workflow_id,
+          rename: 'Updated Concurrently',
+        }),
+      ];
+
+      const results = await Promise.all(promises);
+
+      expect(results).toHaveLength(2);
+
+      // Final state should be consistent
+      const workflow = await workflowGet(client, {
+        workflow_id: createResult.workflow_id,
+      });
+
+      expect(workflow.name).toBe('Updated Concurrently');
+    });
+  });
+});

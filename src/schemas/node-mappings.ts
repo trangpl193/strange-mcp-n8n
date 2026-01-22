@@ -115,3 +115,29 @@ export const NODE_MAPPINGS: Record<string, NodeMapping> = {
 export function getNodeMapping(simplifiedType: string): NodeMapping | null {
   return NODE_MAPPINGS[simplifiedType.toLowerCase()] || null;
 }
+
+/**
+ * Get default name for a simplified node type
+ */
+export function getDefaultNodeName(simplifiedType: string): string {
+  // Convert "webhook" → "Webhook", "postgres" → "Postgres", etc.
+  const type = simplifiedType.toLowerCase();
+
+  // Special cases for better naming
+  const nameMap: Record<string, string> = {
+    webhook: 'Webhook',
+    schedule: 'Schedule Trigger',
+    manual: 'Manual',
+    http: 'HTTP Request',
+    postgres: 'Postgres',
+    discord: 'Discord',
+    respond: 'Respond to Webhook',
+    if: 'IF',
+    switch: 'Switch',
+    merge: 'Merge',
+    set: 'Set',
+    code: 'Code',
+  };
+
+  return nameMap[type] || type.charAt(0).toUpperCase() + type.slice(1);
+}
