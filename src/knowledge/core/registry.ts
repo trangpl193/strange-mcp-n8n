@@ -144,16 +144,22 @@ export const schemaRegistry = new SchemaRegistry();
  * Called on server startup to populate registry with essential schemas.
  * Import and register individual node schemas here.
  */
-export function initializeCoreSchemas(): void {
-  // Schemas will be imported and registered as they are implemented
-  // Example:
-  // import { ifNodeSchema } from '../schemas/if-node.js';
-  // import { ifNodeQuirks } from '../quirks/if-node.js';
-  //
-  // schemaRegistry.registerSchema(ifNodeSchema);
-  // ifNodeQuirks.forEach(quirk => schemaRegistry.registerQuirk(quirk));
+export async function initializeCoreSchemas(): Promise<void> {
+  // Import schemas
+  const { ifNodeSchema } = await import('../schemas/if-node.js');
+  const { switchNodeSchema } = await import('../schemas/switch-node.js');
+  const { filterNodeSchema } = await import('../schemas/filter-node.js');
 
-  // TODO: Import and register If-node schema (Phase 3A.2)
-  // TODO: Import and register Switch-node schema (Phase 3A.2)
-  // TODO: Import and register Filter-node schema (Phase 3A.2)
+  // Import quirks
+  const { ifNodeQuirks } = await import('../quirks/if-node.js');
+
+  // Register schemas
+  schemaRegistry.registerSchema(ifNodeSchema);
+  schemaRegistry.registerSchema(switchNodeSchema);
+  schemaRegistry.registerSchema(filterNodeSchema);
+
+  // Register quirks
+  ifNodeQuirks.forEach((quirk) => schemaRegistry.registerQuirk(quirk));
+
+  console.log('✅ Knowledge Layer initialized: 3 schemas, 1 quirk registered');
 }

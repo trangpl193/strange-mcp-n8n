@@ -27,3 +27,11 @@ export type {
 
 // Core registry
 export { SchemaRegistry, schemaRegistry, initializeCoreSchemas } from './core/registry.js';
+
+// Schemas (re-export for direct access if needed)
+export { ifNodeSchema } from './schemas/if-node.js';
+export { switchNodeSchema } from './schemas/switch-node.js';
+export { filterNodeSchema } from './schemas/filter-node.js';
+
+// Quirks
+export { ifNodeQuirks, ifNodeDualFormatQuirk } from './quirks/if-node.js';
