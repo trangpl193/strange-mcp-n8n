@@ -1,0 +1,1234 @@
+# ============================================================================
+# MCP N8N Comprehensive UAT Scenarios
+# ============================================================================
+# Purpose: End-to-end validation of MCP N8N deployment
+# Executor: AI Agent (Claude Code CLI)
+# Target: Production server via MCP tools
+# Created: 2026-01-23
+# ============================================================================
+
+metadata:
+  title: "MCP N8N Comprehensive UAT"
+  version: "1.0"
+  created: "2026-01-23"
+  purpose: |
+    Validate all MCP N8N capabilities including:
+    - Complex workflow creation with multiple node types
+    - Knowledge layer (schema lookup, quirks detection)
+    - Builder pattern with validation
+    - N8N UI rendering verification
+
+  success_criteria:
+    - "All workflows render correctly in N8N UI"
+    - "No schema errors when opening workflows for edit"
+    - "Knowledge layer correctly identifies quirks"
+    - "Builder validation prevents known issues"
+
+  pre_requisites:
+    - "MCP N8N server deployed and healthy"
+    - "N8N instance accessible"
+    - "Redis connected for builder sessions"
+    - "Valid N8N API credentials configured"
+
+# ============================================================================
+# UAT EXECUTION INSTRUCTIONS
+# ============================================================================
+execution_instructions:
+  for_ai_agent: |
+    Execute each scenario in order. For each scenario:
+    1. Read the scenario description and expected outcome
+    2. Execute the steps using MCP tools
+    3. Record actual results
+    4. Compare with expected results
+    5. Mark PASS/FAIL
+    6. If FAIL, document the issue
+
+    After all scenarios, create a summary report.
+
+  mcp_tools_available:
+    workflow_tools:
+      - "workflow_list: List all workflows"
+      - "workflow_get: Get workflow details"
+      - "workflow_create: Create workflow from simplified schema"
+      - "workflow_update: Update existing workflow"
+
+    builder_tools:
+      - "builder_start: Start new builder session"
+      - "builder_add_node: Add node to draft"
+      - "builder_connect: Connect nodes"
+      - "builder_preview: Preview with validation"
+      - "builder_commit: Commit to N8N"
+      - "builder_discard: Discard session"
+      - "builder_list: List pending sessions"
+
+    knowledge_tools:
+      - "schema_get: Get node schema"
+      - "schema_list: List available schemas"
+      - "quirks_check: Check node for quirks"
+      - "quirks_search: Search quirks database"
+      - "schema_validate: Validate node config"
+
+    execution_tools:
+      - "execution_list: List executions"
+      - "execution_debug: Debug execution"
+
+# ============================================================================
+# SCENARIO 1: HEALTH CHECK & BASIC OPERATIONS
+# ============================================================================
+scenarios:
+  - id: "UAT-001"
+    name: "Health Check & Basic Operations"
+    category: "Infrastructure"
+    priority: "Critical"
+    estimated_time: "5 minutes"
+
+    description: |
+      Verify MCP N8N server is healthy and basic operations work.
+      This must pass before proceeding to other scenarios.
+
+    steps:
+      - step: 1
+        action: "List workflows"
+        tool: "workflow_list"
+        input: "{}"
+        expected:
+          - "Returns list of workflows (may be empty or populated)"
+          - "No connection errors"
+          - "Response includes workflow metadata"
+        validation: "Response contains 'workflows' array"
+
+      - step: 2
+        action: "List available schemas"
+        tool: "schema_list"
+        input: "{}"
+        expected:
+          - "Returns at least 3 schemas: If, Switch, Filter"
+          - "Each schema has nodeType and description"
+        validation: "schemas.length >= 3"
+
+      - step: 3
+        action: "Check quirks database"
+        tool: "quirks_search"
+        input: '{"query": "format"}'
+        expected:
+          - "Returns If-node dual format quirk"
+          - "Quirk has severity, symptom, solution"
+        validation: "At least 1 quirk found"
+
+    success_criteria: "All 3 steps pass without errors"
+    rollback: "N/A - read-only operations"
+
+  # ==========================================================================
+  # SCENARIO 2: IF-NODE WORKFLOW (CRITICAL - QUIRK VALIDATION)
+  # ==========================================================================
+  - id: "UAT-002"
+    name: "If-Node Workflow with Correct Schema"
+    category: "Complex Workflow"
+    priority: "Critical"
+    estimated_time: "10 minutes"
+
+    description: |
+      Create a workflow with If-node using CORRECT combinator format.
+      This tests the core knowledge layer functionality - the If-node
+      dual format quirk was the original issue that drove Phase 3A.
+
+    quirk_being_tested: |
+      If-node dual format (combinator vs legacy_options)
+      - N8N API accepts both formats
+      - N8N UI only renders 'combinator' format correctly
+      - MCP N8N should use combinator format
+
+    steps:
+      - step: 1
+        action: "Check If-node schema before creating"
+        tool: "schema_get"
+        input: '{"nodeType": "If"}'
+        expected:
+          - "Returns If-node schema"
+          - "Shows 'combinator' as required format"
+          - "Documents the dual format quirk"
+        validation: "Schema includes combinator format documentation"
+
+      - step: 2
+        action: "Check If-node quirks"
+        tool: "quirks_check"
+        input: '{"nodeType": "If"}'
+        expected:
+          - "Returns dual format quirk"
+          - "Severity: critical"
+          - "Solution: use combinator format"
+        validation: "Quirk found with severity='critical'"
+
+      - step: 3
+        action: "Create workflow with If-node using builder"
+        tool: "builder_start"
+        input: |
+          {
+            "name": "UAT-002 If-Node Test",
+            "description": "Testing If-node combinator format"
+          }
+        expected:
+          - "Session created with ID"
+          - "Status: pending"
+        validation: "sessionId returned"
+
+      - step: 4
+        action: "Add manual trigger"
+        tool: "builder_add_node"
+        input: |
+          {
+            "sessionId": "{sessionId}",
+            "nodeType": "manual"
+          }
+        expected:
+          - "Manual trigger node added"
+          - "No validation warnings"
+        validation: "Node added successfully"
+
+      - step: 5
+        action: "Add If-node with combinator format"
+        tool: "builder_add_node"
+        input: |
+          {
+            "sessionId": "{sessionId}",
+            "nodeType": "if",
+            "nodeConfig_json": "{\"combinator\": \"and\", \"conditions\": [{\"leftValue\": \"={{ $json.status }}\", \"rightValue\": \"active\", \"operator\": {\"type\": \"string\", \"operation\": \"equals\"}}]}"
+          }
+        expected:
+          - "If-node added"
+          - "May show quirk warning (informational)"
+          - "Validation passes because combinator format used"
+        validation: "Node added, no blocking errors"
+
+      - step: 6
+        action: "Add output nodes for both branches"
+        tool: "builder_add_node"
+        input: |
+          {
+            "sessionId": "{sessionId}",
+            "nodeType": "set",
+            "nodeName": "True Branch"
+          }
+        expected:
+          - "Set node added for true branch"
+        validation: "Node added"
+
+      - step: 7
+        action: "Add false branch node"
+        tool: "builder_add_node"
+        input: |
+          {
+            "sessionId": "{sessionId}",
+            "nodeType": "set",
+            "nodeName": "False Branch"
+          }
+        expected:
+          - "Set node added for false branch"
+        validation: "Node added"
+
+      - step: 8
+        action: "Connect nodes"
+        tool: "builder_connect"
+        input: |
+          {
+            "sessionId": "{sessionId}",
+            "fromNode": "Manual Trigger",
+            "toNode": "If"
+          }
+        expected:
+          - "Connection created"
+        validation: "Connection successful"
+
+      - step: 9
+        action: "Connect If true branch"
+        tool: "builder_connect"
+        input: |
+          {
+            "sessionId": "{sessionId}",
+            "fromNode": "If",
+            "toNode": "True Branch",
+            "fromOutput": 0
+          }
+        expected:
+          - "True branch connection created"
+        validation: "Connection successful"
+
+      - step: 10
+        action: "Connect If false branch"
+        tool: "builder_connect"
+        input: |
+          {
+            "sessionId": "{sessionId}",
+            "fromNode": "If",
+            "toNode": "False Branch",
+            "fromOutput": 1
+          }
+        expected:
+          - "False branch connection created"
+        validation: "Connection successful"
+
+      - step: 11
+        action: "Preview workflow"
+        tool: "builder_preview"
+        input: '{"sessionId": "{sessionId}"}'
+        expected:
+          - "Workflow preview returned"
+          - "All 4 nodes present"
+          - "All 3 connections present"
+          - "No blocking validation errors"
+        validation: "Preview shows valid workflow structure"
+
+      - step: 12
+        action: "Commit workflow"
+        tool: "builder_commit"
+        input: '{"sessionId": "{sessionId}"}'
+        expected:
+          - "Workflow created in N8N"
+          - "Workflow ID returned"
+        validation: "workflowId returned"
+
+    post_validation:
+      ui_check: |
+        MANUAL CHECK REQUIRED:
+        1. Open N8N UI: https://n8n.strangematic.com
+        2. Find workflow "UAT-002 If-Node Test"
+        3. Click to edit workflow
+        4. Verify:
+           - All 4 nodes visible and correctly positioned
+           - If-node shows condition configuration
+           - Both branches (true/false) connected correctly
+           - No JavaScript errors in browser console
+           - Workflow can be saved without errors
+
+      expected_ui_result:
+        - "If-node renders with condition visible"
+        - "True and False outputs clearly labeled"
+        - "No 'Invalid node configuration' errors"
+        - "Workflow editable without crashes"
+
+    success_criteria: |
+      - All 12 steps pass
+      - UI verification passes
+      - If-node uses combinator format (not legacy_options)
+
+    rollback: |
+      If test fails:
+      1. builder_discard to clean up session
+      2. Delete workflow from N8N if partially created
+      3. Document the failure point and error message
+
+  # ==========================================================================
+  # SCENARIO 3: SWITCH-NODE MULTI-BRANCH WORKFLOW
+  # ==========================================================================
+  - id: "UAT-003"
+    name: "Switch-Node Multi-Branch Routing"
+    category: "Complex Workflow"
+    priority: "High"
+    estimated_time: "10 minutes"
+
+    description: |
+      Create a workflow with Switch-node for multi-branch routing.
+      Tests multi-output port handling and branch connections.
+
+    steps:
+      - step: 1
+        action: "Get Switch-node schema"
+        tool: "schema_get"
+        input: '{"nodeType": "Switch"}'
+        expected:
+          - "Returns Switch-node schema"
+          - "Documents output ports"
+          - "Shows routing configuration"
+        validation: "Schema returned with output configuration"
+
+      - step: 2
+        action: "Start builder session"
+        tool: "builder_start"
+        input: |
+          {
+            "name": "UAT-003 Switch-Node Test",
+            "description": "Testing multi-branch Switch node"
+          }
+        expected:
+          - "Session created"
+        validation: "sessionId returned"
+
+      - step: 3
+        action: "Add webhook trigger"
+        tool: "builder_add_node"
+        input: |
+          {
+            "sessionId": "{sessionId}",
+            "nodeType": "webhook",
+            "nodeConfig_json": "{\"path\": \"uat-switch-test\"}"
+          }
+        expected:
+          - "Webhook trigger added"
+        validation: "Node added"
+
+      - step: 4
+        action: "Add Switch-node with 3 routes"
+        tool: "builder_add_node"
+        input: |
+          {
+            "sessionId": "{sessionId}",
+            "nodeType": "switch",
+            "nodeConfig_json": "{\"rules\": [{\"output\": 0, \"value\": \"high\"}, {\"output\": 1, \"value\": \"medium\"}, {\"output\": 2, \"value\": \"low\"}], \"fallbackOutput\": 3}"
+          }
+        expected:
+          - "Switch-node added"
+          - "4 outputs configured (3 rules + fallback)"
+        validation: "Node added"
+
+      - step: 5
+        action: "Add handler for each route"
+        tool: "builder_add_node"
+        input: |
+          {
+            "sessionId": "{sessionId}",
+            "nodeType": "set",
+            "nodeName": "High Priority"
+          }
+        expected:
+          - "High priority handler added"
+        validation: "Node added"
+
+      - step: 6
+        action: "Add medium priority handler"
+        tool: "builder_add_node"
+        input: |
+          {
+            "sessionId": "{sessionId}",
+            "nodeType": "set",
+            "nodeName": "Medium Priority"
+          }
+        expected:
+          - "Medium priority handler added"
+        validation: "Node added"
+
+      - step: 7
+        action: "Add low priority handler"
+        tool: "builder_add_node"
+        input: |
+          {
+            "sessionId": "{sessionId}",
+            "nodeType": "set",
+            "nodeName": "Low Priority"
+          }
+        expected:
+          - "Low priority handler added"
+        validation: "Node added"
+
+      - step: 8
+        action: "Connect webhook to switch"
+        tool: "builder_connect"
+        input: |
+          {
+            "sessionId": "{sessionId}",
+            "fromNode": "Webhook",
+            "toNode": "Switch"
+          }
+        expected:
+          - "Connection created"
+        validation: "Connection successful"
+
+      - step: 9
+        action: "Connect switch outputs to handlers"
+        tool: "builder_connect"
+        input: |
+          {
+            "sessionId": "{sessionId}",
+            "fromNode": "Switch",
+            "toNode": "High Priority",
+            "fromOutput": 0
+          }
+        expected:
+          - "High priority route connected"
+        validation: "Connection successful"
+
+      - step: 10
+        action: "Connect medium priority"
+        tool: "builder_connect"
+        input: |
+          {
+            "sessionId": "{sessionId}",
+            "fromNode": "Switch",
+            "toNode": "Medium Priority",
+            "fromOutput": 1
+          }
+        expected:
+          - "Medium priority route connected"
+        validation: "Connection successful"
+
+      - step: 11
+        action: "Connect low priority"
+        tool: "builder_connect"
+        input: |
+          {
+            "sessionId": "{sessionId}",
+            "fromNode": "Switch",
+            "toNode": "Low Priority",
+            "fromOutput": 2
+          }
+        expected:
+          - "Low priority route connected"
+        validation: "Connection successful"
+
+      - step: 12
+        action: "Preview and commit"
+        tool: "builder_preview"
+        input: '{"sessionId": "{sessionId}"}'
+        expected:
+          - "Valid workflow structure"
+          - "5 nodes, 4 connections"
+        validation: "No validation errors"
+
+      - step: 13
+        action: "Commit workflow"
+        tool: "builder_commit"
+        input: '{"sessionId": "{sessionId}"}'
+        expected:
+          - "Workflow created"
+        validation: "workflowId returned"
+
+    post_validation:
+      ui_check: |
+        MANUAL CHECK REQUIRED:
+        1. Open workflow "UAT-003 Switch-Node Test" in N8N UI
+        2. Verify:
+           - Switch-node shows all 4 outputs
+           - Each output connects to correct handler
+           - No rendering errors
+           - Workflow editable
+
+    success_criteria: "All steps pass, UI renders correctly"
+    rollback: "builder_discard and delete workflow if needed"
+
+  # ==========================================================================
+  # SCENARIO 4: FILTER-NODE DATA PROCESSING
+  # ==========================================================================
+  - id: "UAT-004"
+    name: "Filter-Node Data Processing"
+    category: "Complex Workflow"
+    priority: "High"
+    estimated_time: "8 minutes"
+
+    description: |
+      Create a workflow with Filter-node for data filtering.
+      Tests filter conditions and data flow.
+
+    steps:
+      - step: 1
+        action: "Get Filter-node schema"
+        tool: "schema_get"
+        input: '{"nodeType": "Filter"}'
+        expected:
+          - "Returns Filter-node schema"
+          - "Documents filter conditions"
+        validation: "Schema returned"
+
+      - step: 2
+        action: "Start builder"
+        tool: "builder_start"
+        input: |
+          {
+            "name": "UAT-004 Filter-Node Test",
+            "description": "Testing Filter node data processing"
+          }
+        expected:
+          - "Session created"
+        validation: "sessionId returned"
+
+      - step: 3
+        action: "Add manual trigger"
+        tool: "builder_add_node"
+        input: |
+          {
+            "sessionId": "{sessionId}",
+            "nodeType": "manual"
+          }
+        expected:
+          - "Trigger added"
+        validation: "Node added"
+
+      - step: 4
+        action: "Add Filter-node"
+        tool: "builder_add_node"
+        input: |
+          {
+            "sessionId": "{sessionId}",
+            "nodeType": "filter",
+            "nodeConfig_json": "{\"conditions\": {\"options\": {\"combinator\": \"and\"}, \"conditions\": [{\"leftValue\": \"={{ $json.active }}\", \"rightValue\": true, \"operator\": {\"type\": \"boolean\", \"operation\": \"equals\"}}]}}"
+          }
+        expected:
+          - "Filter-node added"
+        validation: "Node added"
+
+      - step: 5
+        action: "Add output node"
+        tool: "builder_add_node"
+        input: |
+          {
+            "sessionId": "{sessionId}",
+            "nodeType": "set",
+            "nodeName": "Filtered Output"
+          }
+        expected:
+          - "Output node added"
+        validation: "Node added"
+
+      - step: 6
+        action: "Connect nodes"
+        tool: "builder_connect"
+        input: |
+          {
+            "sessionId": "{sessionId}",
+            "fromNode": "Manual Trigger",
+            "toNode": "Filter"
+          }
+        expected:
+          - "Connected"
+        validation: "Connection successful"
+
+      - step: 7
+        action: "Connect filter to output"
+        tool: "builder_connect"
+        input: |
+          {
+            "sessionId": "{sessionId}",
+            "fromNode": "Filter",
+            "toNode": "Filtered Output"
+          }
+        expected:
+          - "Connected"
+        validation: "Connection successful"
+
+      - step: 8
+        action: "Preview and commit"
+        tool: "builder_preview"
+        input: '{"sessionId": "{sessionId}"}'
+        expected:
+          - "Valid structure"
+        validation: "No errors"
+
+      - step: 9
+        action: "Commit"
+        tool: "builder_commit"
+        input: '{"sessionId": "{sessionId}"}'
+        expected:
+          - "Workflow created"
+        validation: "workflowId returned"
+
+    post_validation:
+      ui_check: |
+        MANUAL CHECK:
+        1. Open "UAT-004 Filter-Node Test" in N8N
+        2. Verify Filter-node shows condition
+        3. Workflow editable without errors
+
+    success_criteria: "All steps pass, UI renders correctly"
+
+  # ==========================================================================
+  # SCENARIO 5: CODE-NODE WITH JAVASCRIPT
+  # ==========================================================================
+  - id: "UAT-005"
+    name: "Code-Node JavaScript Execution"
+    category: "Complex Workflow"
+    priority: "High"
+    estimated_time: "8 minutes"
+
+    description: |
+      Create a workflow with Code-node for custom JavaScript logic.
+      Tests code node configuration and execution.
+
+    steps:
+      - step: 1
+        action: "Start builder"
+        tool: "builder_start"
+        input: |
+          {
+            "name": "UAT-005 Code-Node Test",
+            "description": "Testing Code node with JavaScript"
+          }
+        expected:
+          - "Session created"
+        validation: "sessionId returned"
+
+      - step: 2
+        action: "Add manual trigger"
+        tool: "builder_add_node"
+        input: |
+          {
+            "sessionId": "{sessionId}",
+            "nodeType": "manual"
+          }
+        expected:
+          - "Trigger added"
+        validation: "Node added"
+
+      - step: 3
+        action: "Add Code-node with JavaScript"
+        tool: "builder_add_node"
+        input: |
+          {
+            "sessionId": "{sessionId}",
+            "nodeType": "code",
+            "nodeConfig_json": "{\"language\": \"javaScript\", \"jsCode\": \"// UAT Test Code\\nconst items = $input.all();\\nconst processed = items.map(item => ({\\n  json: {\\n    ...item.json,\\n    processed: true,\\n    timestamp: new Date().toISOString()\\n  }\\n}));\\nreturn processed;\"}"
+          }
+        expected:
+          - "Code-node added with JavaScript"
+        validation: "Node added"
+
+      - step: 4
+        action: "Add output node"
+        tool: "builder_add_node"
+        input: |
+          {
+            "sessionId": "{sessionId}",
+            "nodeType": "set",
+            "nodeName": "Code Output"
+          }
+        expected:
+          - "Output added"
+        validation: "Node added"
+
+      - step: 5
+        action: "Connect trigger to code"
+        tool: "builder_connect"
+        input: |
+          {
+            "sessionId": "{sessionId}",
+            "fromNode": "Manual Trigger",
+            "toNode": "Code"
+          }
+        expected:
+          - "Connected"
+        validation: "Success"
+
+      - step: 6
+        action: "Connect code to output"
+        tool: "builder_connect"
+        input: |
+          {
+            "sessionId": "{sessionId}",
+            "fromNode": "Code",
+            "toNode": "Code Output"
+          }
+        expected:
+          - "Connected"
+        validation: "Success"
+
+      - step: 7
+        action: "Commit"
+        tool: "builder_commit"
+        input: '{"sessionId": "{sessionId}"}'
+        expected:
+          - "Workflow created"
+        validation: "workflowId returned"
+
+    post_validation:
+      ui_check: |
+        MANUAL CHECK:
+        1. Open "UAT-005 Code-Node Test" in N8N
+        2. Click on Code node
+        3. Verify JavaScript code is visible in editor
+        4. No syntax errors shown
+        5. Workflow can be executed
+
+    success_criteria: "Workflow created, code visible in UI"
+
+  # ==========================================================================
+  # SCENARIO 6: POSTGRES-NODE DATABASE OPERATIONS
+  # ==========================================================================
+  - id: "UAT-006"
+    name: "Postgres-Node Database Operations"
+    category: "Complex Workflow"
+    priority: "High"
+    estimated_time: "10 minutes"
+
+    description: |
+      Create a workflow with Postgres-node for database operations.
+      Tests credential handling and query configuration.
+      NOTE: Requires valid Postgres credential in N8N.
+
+    pre_requisite: |
+      Postgres credential must be configured in N8N with name "postgres"
+      or appropriate credential ID must be known.
+
+    steps:
+      - step: 1
+        action: "Start builder with credentials"
+        tool: "builder_start"
+        input: |
+          {
+            "name": "UAT-006 Postgres-Node Test",
+            "description": "Testing Postgres database operations",
+            "credentials_json": "{\"postgres\": \"postgres\"}"
+          }
+        expected:
+          - "Session created with credential mapping"
+        validation: "sessionId returned"
+
+      - step: 2
+        action: "Add schedule trigger"
+        tool: "builder_add_node"
+        input: |
+          {
+            "sessionId": "{sessionId}",
+            "nodeType": "schedule",
+            "nodeConfig_json": "{\"rule\": {\"interval\": [{\"field\": \"hours\", \"triggerAtHour\": 9}]}}"
+          }
+        expected:
+          - "Schedule trigger added"
+        validation: "Node added"
+
+      - step: 3
+        action: "Add Postgres query node"
+        tool: "builder_add_node"
+        input: |
+          {
+            "sessionId": "{sessionId}",
+            "nodeType": "postgres",
+            "nodeAction": "query",
+            "credentialName": "postgres",
+            "nodeConfig_json": "{\"operation\": \"executeQuery\", \"query\": \"SELECT id, name, created_at FROM users LIMIT 10\"}"
+          }
+        expected:
+          - "Postgres node added with query"
+          - "Credential linked"
+        validation: "Node added with credential"
+
+      - step: 4
+        action: "Add Set node for processing"
+        tool: "builder_add_node"
+        input: |
+          {
+            "sessionId": "{sessionId}",
+            "nodeType": "set",
+            "nodeName": "Process Results"
+          }
+        expected:
+          - "Set node added"
+        validation: "Node added"
+
+      - step: 5
+        action: "Connect nodes"
+        tool: "builder_connect"
+        input: |
+          {
+            "sessionId": "{sessionId}",
+            "fromNode": "Schedule Trigger",
+            "toNode": "Postgres"
+          }
+        expected:
+          - "Connected"
+        validation: "Success"
+
+      - step: 6
+        action: "Connect postgres to set"
+        tool: "builder_connect"
+        input: |
+          {
+            "sessionId": "{sessionId}",
+            "fromNode": "Postgres",
+            "toNode": "Process Results"
+          }
+        expected:
+          - "Connected"
+        validation: "Success"
+
+      - step: 7
+        action: "Preview workflow"
+        tool: "builder_preview"
+        input: '{"sessionId": "{sessionId}"}'
+        expected:
+          - "Valid structure"
+          - "Credential reference present"
+        validation: "No errors"
+
+      - step: 8
+        action: "Commit"
+        tool: "builder_commit"
+        input: '{"sessionId": "{sessionId}"}'
+        expected:
+          - "Workflow created"
+        validation: "workflowId returned"
+
+    post_validation:
+      ui_check: |
+        MANUAL CHECK:
+        1. Open "UAT-006 Postgres-Node Test" in N8N
+        2. Click on Postgres node
+        3. Verify:
+           - Credential is linked
+           - Query is visible
+           - No credential errors
+        4. Node can be configured/edited
+
+    success_criteria: "Workflow created with Postgres credential linked"
+
+  # ==========================================================================
+  # SCENARIO 7: COMPLEX PIPELINE (END-TO-END)
+  # ==========================================================================
+  - id: "UAT-007"
+    name: "Complex Data Pipeline"
+    category: "End-to-End"
+    priority: "Critical"
+    estimated_time: "15 minutes"
+
+    description: |
+      Create a complex real-world workflow combining multiple node types:
+      Webhook → Code → If → (Branch A: HTTP) / (Branch B: Set) → Merge
+
+      This tests the full capability of MCP N8N in a realistic scenario.
+
+    architecture: |
+      ┌─────────┐    ┌──────┐    ┌────┐    ┌──────────┐
+      │ Webhook │───►│ Code │───►│ If │───►│ HTTP API │
+      └─────────┘    └──────┘    └────┘    └──────────┘
+                                    │             │
+                                    │             ▼
+                                    │       ┌─────────┐
+                                    └──────►│   Set   │
+                                            └─────────┘
+
+    steps:
+      - step: 1
+        action: "Start builder"
+        tool: "builder_start"
+        input: |
+          {
+            "name": "UAT-007 Complex Pipeline",
+            "description": "End-to-end data processing pipeline"
+          }
+        expected:
+          - "Session created"
+        validation: "sessionId returned"
+
+      - step: 2
+        action: "Add Webhook trigger"
+        tool: "builder_add_node"
+        input: |
+          {
+            "sessionId": "{sessionId}",
+            "nodeType": "webhook",
+            "nodeConfig_json": "{\"path\": \"uat-pipeline\", \"httpMethod\": \"POST\"}"
+          }
+        expected:
+          - "Webhook added"
+        validation: "Node added"
+
+      - step: 3
+        action: "Add Code node for transformation"
+        tool: "builder_add_node"
+        input: |
+          {
+            "sessionId": "{sessionId}",
+            "nodeType": "code",
+            "nodeName": "Transform Data",
+            "nodeConfig_json": "{\"language\": \"javaScript\", \"jsCode\": \"const items = $input.all();\\nreturn items.map(item => ({\\n  json: {\\n    ...item.json,\\n    priority: item.json.amount > 1000 ? 'high' : 'low'\\n  }\\n}));\"}"
+          }
+        expected:
+          - "Code node added"
+        validation: "Node added"
+
+      - step: 4
+        action: "Add If node for routing"
+        tool: "builder_add_node"
+        input: |
+          {
+            "sessionId": "{sessionId}",
+            "nodeType": "if",
+            "nodeName": "Check Priority",
+            "nodeConfig_json": "{\"combinator\": \"and\", \"conditions\": [{\"leftValue\": \"={{ $json.priority }}\", \"rightValue\": \"high\", \"operator\": {\"type\": \"string\", \"operation\": \"equals\"}}]}"
+          }
+        expected:
+          - "If node added with combinator format"
+        validation: "Node added"
+
+      - step: 5
+        action: "Add HTTP node for high priority"
+        tool: "builder_add_node"
+        input: |
+          {
+            "sessionId": "{sessionId}",
+            "nodeType": "http",
+            "nodeName": "Notify High Priority",
+            "nodeConfig_json": "{\"url\": \"https://httpbin.org/post\", \"method\": \"POST\", \"sendBody\": true, \"bodyParameters\": {\"parameters\": [{\"name\": \"data\", \"value\": \"={{ JSON.stringify($json) }}\"}]}}"
+          }
+        expected:
+          - "HTTP node added"
+        validation: "Node added"
+
+      - step: 6
+        action: "Add Set node for low priority"
+        tool: "builder_add_node"
+        input: |
+          {
+            "sessionId": "{sessionId}",
+            "nodeType": "set",
+            "nodeName": "Log Low Priority"
+          }
+        expected:
+          - "Set node added"
+        validation: "Node added"
+
+      - step: 7
+        action: "Connect Webhook → Code"
+        tool: "builder_connect"
+        input: |
+          {
+            "sessionId": "{sessionId}",
+            "fromNode": "Webhook",
+            "toNode": "Transform Data"
+          }
+        expected:
+          - "Connected"
+        validation: "Success"
+
+      - step: 8
+        action: "Connect Code → If"
+        tool: "builder_connect"
+        input: |
+          {
+            "sessionId": "{sessionId}",
+            "fromNode": "Transform Data",
+            "toNode": "Check Priority"
+          }
+        expected:
+          - "Connected"
+        validation: "Success"
+
+      - step: 9
+        action: "Connect If (true) → HTTP"
+        tool: "builder_connect"
+        input: |
+          {
+            "sessionId": "{sessionId}",
+            "fromNode": "Check Priority",
+            "toNode": "Notify High Priority",
+            "fromOutput": 0
+          }
+        expected:
+          - "True branch connected"
+        validation: "Success"
+
+      - step: 10
+        action: "Connect If (false) → Set"
+        tool: "builder_connect"
+        input: |
+          {
+            "sessionId": "{sessionId}",
+            "fromNode": "Check Priority",
+            "toNode": "Log Low Priority",
+            "fromOutput": 1
+          }
+        expected:
+          - "False branch connected"
+        validation: "Success"
+
+      - step: 11
+        action: "Preview workflow"
+        tool: "builder_preview"
+        input: '{"sessionId": "{sessionId}"}'
+        expected:
+          - "6 nodes present"
+          - "5 connections"
+          - "No validation errors"
+          - "If-node uses combinator format"
+        validation: "Valid workflow structure"
+
+      - step: 12
+        action: "Commit workflow"
+        tool: "builder_commit"
+        input: '{"sessionId": "{sessionId}"}'
+        expected:
+          - "Workflow created successfully"
+        validation: "workflowId returned"
+
+    post_validation:
+      ui_check: |
+        CRITICAL MANUAL CHECK:
+        1. Open "UAT-007 Complex Pipeline" in N8N UI
+        2. Verify ALL nodes render correctly:
+           - Webhook shows path configuration
+           - Code shows JavaScript
+           - If shows condition (NOT empty config)
+           - HTTP shows URL and method
+           - Set is properly configured
+        3. All connections visible
+        4. No JavaScript errors in browser
+        5. Workflow can be saved
+        6. Optional: Execute with test data
+
+    success_criteria: |
+      - All 12 steps pass
+      - UI renders all nodes correctly
+      - If-node condition visible (not legacy format)
+      - Workflow is executable
+
+    importance: |
+      This is the MOST IMPORTANT scenario. It validates that complex
+      real-world workflows can be created and rendered correctly.
+      If this fails, the deployment is NOT production-ready.
+
+  # ==========================================================================
+  # SCENARIO 8: WORKFLOW UPDATE (CRUD)
+  # ==========================================================================
+  - id: "UAT-008"
+    name: "Workflow Update Operations"
+    category: "CRUD"
+    priority: "Medium"
+    estimated_time: "5 minutes"
+
+    description: |
+      Test updating an existing workflow created in previous scenarios.
+
+    pre_requisite: "UAT-002 workflow exists"
+
+    steps:
+      - step: 1
+        action: "Get existing workflow"
+        tool: "workflow_get"
+        input: |
+          {
+            "workflowId": "{UAT-002-workflowId}"
+          }
+        expected:
+          - "Workflow details returned"
+          - "Contains all nodes"
+        validation: "Workflow found"
+
+      - step: 2
+        action: "Update workflow name"
+        tool: "workflow_update"
+        input: |
+          {
+            "workflowId": "{UAT-002-workflowId}",
+            "name": "UAT-002 If-Node Test (Updated)"
+          }
+        expected:
+          - "Workflow updated"
+          - "New name applied"
+        validation: "Update successful"
+
+      - step: 3
+        action: "Verify update"
+        tool: "workflow_get"
+        input: |
+          {
+            "workflowId": "{UAT-002-workflowId}"
+          }
+        expected:
+          - "Name is 'UAT-002 If-Node Test (Updated)'"
+        validation: "Name matches"
+
+    success_criteria: "Workflow updated and verified"
+
+  # ==========================================================================
+  # SCENARIO 9: CLEANUP
+  # ==========================================================================
+  - id: "UAT-009"
+    name: "Cleanup Test Workflows"
+    category: "Maintenance"
+    priority: "Low"
+    estimated_time: "5 minutes"
+
+    description: |
+      Optional cleanup of test workflows created during UAT.
+      Run this after verifying all scenarios pass.
+
+    steps:
+      - step: 1
+        action: "List test workflows"
+        tool: "workflow_list"
+        input: '{"name": "UAT-"}'
+        expected:
+          - "List of UAT workflows"
+        validation: "Workflows listed"
+
+      - step: 2
+        action: "Document workflow IDs for manual cleanup"
+        tool: "N/A - Manual"
+        expected:
+          - "IDs recorded for cleanup"
+        note: |
+          Workflows can be deleted manually in N8N UI or via
+          direct N8N API call (MCP N8N doesn't have delete tool).
+
+    success_criteria: "UAT workflows identified for cleanup"
+    note: "Cleanup is optional - test workflows can be kept for reference"
+
+# ============================================================================
+# UAT SUMMARY TEMPLATE
+# ============================================================================
+summary_template:
+  format: |
+    # UAT Summary Report
+
+    **Date:** {date}
+    **Executor:** AI Agent
+    **Environment:** Production
+
+    ## Results
+
+    | Scenario | Status | Notes |
+    |----------|--------|-------|
+    | UAT-001 Health Check | PASS/FAIL | |
+    | UAT-002 If-Node | PASS/FAIL | |
+    | UAT-003 Switch-Node | PASS/FAIL | |
+    | UAT-004 Filter-Node | PASS/FAIL | |
+    | UAT-005 Code-Node | PASS/FAIL | |
+    | UAT-006 Postgres-Node | PASS/FAIL | |
+    | UAT-007 Complex Pipeline | PASS/FAIL | |
+    | UAT-008 Workflow Update | PASS/FAIL | |
+
+    ## UI Verification
+
+    | Workflow | Renders Correctly | Editable | Notes |
+    |----------|-------------------|----------|-------|
+    | UAT-002 | YES/NO | YES/NO | |
+    | UAT-003 | YES/NO | YES/NO | |
+    | ... | | | |
+
+    ## Issues Found
+
+    1. {issue description}
+
+    ## Recommendation
+
+    [ ] APPROVE - All scenarios pass, production ready
+    [ ] CONDITIONAL - Minor issues, can deploy with known limitations
+    [ ] REJECT - Critical issues, do not deploy
+
+    ## Next Steps
+
+    1. {action item}
+
+# ============================================================================
+# QUICK REFERENCE FOR AI AGENT
+# ============================================================================
+quick_reference:
+  critical_scenarios:
+    - "UAT-001: Must pass before proceeding"
+    - "UAT-002: Tests If-node quirk (Phase 3A core value)"
+    - "UAT-007: End-to-end complex workflow"
+
+  common_issues:
+    - issue: "Session expired"
+      solution: "Start new session with builder_start"
+
+    - issue: "Credential not found"
+      solution: "Verify credential exists in N8N, use correct name"
+
+    - issue: "Connection failed"
+      solution: "Check node names are correct, nodes exist in session"
+
+  if_node_reminder: |
+    ALWAYS use combinator format for If-node:
+    {
+      "combinator": "and",
+      "conditions": [...]
+    }
+
+    NEVER use legacy_options format - it will break UI rendering.

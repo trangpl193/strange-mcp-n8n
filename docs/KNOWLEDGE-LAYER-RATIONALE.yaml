@@ -1,0 +1,502 @@
+# ============================================================================
+# Knowledge Layer Design Rationale
+# ============================================================================
+# Template: AI-DOC-TEMPLATE.yaml v1.0
+# ============================================================================
+
+metadata:
+  title: "Knowledge Layer Design Rationale"
+  purpose: |
+    Explain WHY the Knowledge Layer (Phase 3A) was designed and implemented.
+    Provides context for AI agents to understand architectural decisions,
+    enabling informed recommendations for future evolution.
+  audience: "AI agents"
+  last_updated: "2026-01-23"
+  related_decisions:
+    - "9162b4e7-368a-4d5c-b1c7-58f7ec6fa2c9"  # Platform Evolution Architecture
+    - "03a09981-9694-4a43-906d-32d11247e80e"  # Phase 3A Deployment
+  phase: "Phase 3A Complete"
+  status: "active"
+
+# ============================================================================
+# OVERVIEW (TL;DR)
+# ============================================================================
+overview: |
+  The Knowledge Layer was created to solve a meta-problem: AI agents lacked
+  self-service access to N8N node schema information, causing silent failures
+  and hours of manual debugging.
+
+  Key decision: Hybrid middleware with code-based schemas (type safety) and
+  Redis extension capability (future hot updates). Phase 3A delivers MVP with
+  3 node schemas, 1 critical quirk, and 5 MCP tools.
+
+  Use this when: Evaluating if Knowledge Layer approach is still valid,
+  planning additional schemas/quirks, or deciding on Phase 4A Validation Layer.
+
+# ============================================================================
+# DECISION CONTEXT
+# ============================================================================
+decision_context:
+  problem_statement: |
+    ## The If-Node Bug Incident
+
+    During UAT testing of MCP N8N builder, a workflow with If-node was created
+    successfully via API but failed silently in N8N UI. The workflow appeared
+    broken - no connections rendered correctly.
+
+    **Root Cause Discovery (2 hours manual debugging):**
+    - N8N If-node accepts TWO parameter formats:
+      1. `combinator` format (new, UI-compatible)
+      2. `legacy_options` format (old, API-only)
+    - N8N API accepts BOTH formats without error
+    - N8N UI ONLY renders `combinator` format correctly
+    - MCP N8N was generating `legacy_options` format
+
+    **Meta-Problem Revealed:**
+    This isn't just an If-node bug. It's a pattern:
+    - AI agents have NO ACCESS to node schema specifications
+    - AI agents cannot self-diagnose "why does this workflow not work?"
+    - Similar issues will occur with other complex nodes (Switch, Filter, etc.)
+
+  trigger_event:
+    date: "2026-01-22"
+    incident: "If-node dual format bug"
+    debug_time: "2 hours"
+    impact: "Silent workflow failure"
+
+  constraints:
+    table: |
+      | Constraint | Type | Impact |
+      |------------|------|--------|
+      | No N8N schema API | Technical | Must maintain own schema library |
+      | N8N versions vary | Technical | Schemas must be version-aware |
+      | Silent API failures | UX | Need proactive validation, not reactive debugging |
+      | AI-first platform | Design | Must enable AI self-diagnosis |
+      | Solo developer | Resource | Must prioritize high-impact MVP |
+      | Time budget 10-15h | Resource | Cannot build comprehensive library |
+
+  stakeholders:
+    - who: "AI Agents (Claude, future LLMs)"
+      concern: "Need to build valid workflows without trial-and-error"
+      impact: "High - primary consumers of knowledge layer"
+
+    - who: "User (Platform Owner)"
+      concern: "Reduce debugging time, increase AI autonomy"
+      impact: "High - reduces manual intervention"
+
+    - who: "N8N Platform"
+      concern: "Workflows should work correctly in UI"
+      impact: "Medium - knowledge layer prevents broken workflows"
+
+# ============================================================================
+# OPTIONS EVALUATED
+# ============================================================================
+options_evaluated:
+  options:
+    # Option A: Quick Fix
+    - id: "A"
+      name: "Quick Fix - If-Node Only"
+      approach: |
+        Fix the specific If-node format issue. Hardcode combinator format
+        in WorkflowTransformer. No schema library.
+      pros:
+        - "Fast implementation (1-2 hours)"
+        - "Solves immediate problem"
+        - "No new infrastructure"
+      cons:
+        - "Doesn't prevent future similar issues"
+        - "AI still cannot self-diagnose"
+        - "Same debug cycle will repeat for other nodes"
+      effort: "S"
+      risk: "Medium"
+      addresses_root_cause: false
+
+    # Option B: Comprehensive Schema Library
+    - id: "B"
+      name: "Comprehensive Schema Library"
+      approach: |
+        Document ALL N8N node types (200+) with complete schemas,
+        validation rules, and examples. Build database upfront.
+      pros:
+        - "Complete coverage"
+        - "Future-proof"
+        - "Best AI experience"
+      cons:
+        - "Massive effort (100+ hours)"
+        - "Many nodes rarely used"
+        - "Maintenance burden high"
+        - "Delays value delivery"
+      effort: "XL"
+      risk: "High (scope creep)"
+      addresses_root_cause: true
+
+    # Option C: Hybrid MVP (Chosen)
+    - id: "C"
+      name: "Hybrid MVP - Critical Nodes First"
+      approach: |
+        Build extensible knowledge layer with ONLY critical nodes initially.
+        Code-based schemas for type safety, Redis extension for hot updates.
+        Start with If/Switch/Filter (most problematic nodes).
+      pros:
+        - "Addresses root cause"
+        - "Manageable scope (10-15h)"
+        - "Extensible architecture"
+        - "AI can self-diagnose covered nodes"
+        - "Foundation for Phase 4A validation"
+      cons:
+        - "Incomplete coverage initially"
+        - "Must add schemas incrementally"
+        - "Some nodes still require manual debugging"
+      effort: "M"
+      risk: "Low"
+      addresses_root_cause: true
+
+    # Option D: Pure Redis
+    - id: "D"
+      name: "Pure Redis Knowledge Base"
+      approach: |
+        Store all schemas and quirks in Redis. Enable hot updates
+        without code deployment. AI-managed knowledge base.
+      pros:
+        - "Hot updates without restart"
+        - "AI can contribute knowledge"
+        - "Flexible schema format"
+      cons:
+        - "No type safety"
+        - "Schema validation harder"
+        - "Additional infrastructure complexity"
+        - "Debugging more difficult"
+      effort: "M"
+      risk: "Medium"
+      addresses_root_cause: true
+
+  comparison_table: |
+    | Criteria | A: Quick Fix | B: Comprehensive | C: Hybrid MVP | D: Pure Redis |
+    |----------|--------------|------------------|---------------|---------------|
+    | Effort | S (2h) | XL (100h+) | M (15h) | M (15h) |
+    | Root Cause | ❌ | ✅ | ✅ | ✅ |
+    | Type Safety | N/A | ✅ | ✅ | ❌ |
+    | Extensible | ❌ | ✅ | ✅ | ✅ |
+    | Hot Updates | N/A | ❌ | ✅ (via Redis) | ✅ |
+    | AI Self-Diagnose | ❌ | ✅ | ✅ (partial) | ✅ |
+    | Time to Value | Fast | Slow | Medium | Medium |
+    | Maintenance | Low | High | Medium | Medium |
+
+# ============================================================================
+# DECISION RATIONALE
+# ============================================================================
+decision_rationale:
+  chosen: "C - Hybrid MVP (Code + Redis Extension)"
+
+  why_chosen:
+    - reason: "Addresses root cause"
+      detail: "AI agents get schema access, can self-diagnose covered nodes"
+
+    - reason: "Manageable scope"
+      detail: "10-15h for MVP vs 100h+ for comprehensive, fits solo developer"
+
+    - reason: "Type safety preserved"
+      detail: "Code-based schemas enable TypeScript validation"
+
+    - reason: "Extensible foundation"
+      detail: "Can add more schemas incrementally, Redis extension for hot updates"
+
+    - reason: "Validation layer ready"
+      detail: "Architecture supports Phase 4A validation without refactoring"
+
+  why_not_others:
+    option_a: |
+      Quick Fix doesn't address root cause. Same debugging cycle will repeat
+      for Switch, Filter, and other complex nodes. Short-term gain, long-term pain.
+
+    option_b: |
+      Comprehensive library is overengineered for current needs. 200+ node types
+      but only 5-10 are commonly used in AI workflows. Massive effort with
+      delayed value delivery. Violates MVP principle.
+
+    option_d: |
+      Pure Redis loses type safety. Schema validation becomes runtime-only,
+      harder to catch issues during development. Also adds Redis dependency
+      for core functionality (currently optional for sessions only).
+
+  confidence:
+    level: "High"
+    reasoning: |
+      - If-node fix validated the pattern works
+      - Phase 3A deployment successful
+      - 351 tests passing
+      - Zero production issues since deployment
+      - AI agents successfully using knowledge tools
+
+# ============================================================================
+# TRADE-OFFS ACCEPTED
+# ============================================================================
+trade_offs_accepted:
+  table: |
+    | We Gained | We Sacrificed | Mitigation |
+    |-----------|---------------|------------|
+    | Type-safe schemas | Hot updates for schemas | Redis extension path available |
+    | AI self-diagnosis | 100% node coverage | Start with critical nodes, add incrementally |
+    | Manageable scope | Comprehensive upfront | Extensible architecture |
+    | Fast time to value | Perfect system | Iterate based on real usage |
+    | Production stability | Cutting-edge features | Phase 4A adds advanced features |
+
+  key_trade_off: |
+    **Core Trade-off: Coverage vs. Timeliness**
+
+    We chose to cover 3 critical nodes well (If, Switch, Filter) rather than
+    200 nodes poorly. This means:
+    - AI can confidently work with covered nodes
+    - AI must fall back to trial-and-error for uncovered nodes
+    - New schemas added based on real usage patterns
+
+# ============================================================================
+# IMPLEMENTATION SUMMARY
+# ============================================================================
+implementation_summary:
+  architecture: |
+    ┌─────────────────────────────────────────────────────────────────────┐
+    │                     KNOWLEDGE LAYER ARCHITECTURE                    │
+    └─────────────────────────────────────────────────────────────────────┘
+
+                              ┌────────────────┐
+                              │  MCP Tools     │
+                              │  (5 tools)     │
+                              └───────┬────────┘
+                                      │
+                                      ▼
+                          ┌───────────────────────┐
+                          │  KnowledgeRegistry    │
+                          │  (central access)     │
+                          └───────────┬───────────┘
+                                      │
+                     ┌────────────────┼────────────────┐
+                     │                │                │
+                     ▼                ▼                ▼
+              ┌───────────┐   ┌───────────┐    ┌───────────┐
+              │  Schemas  │   │  Quirks   │    │  (Future) │
+              │  (code)   │   │  (code)   │    │  Redis    │
+              └───────────┘   └───────────┘    └───────────┘
+                     │                │
+                     ▼                ▼
+              ┌───────────┐   ┌───────────┐
+              │ If-node   │   │ If-node   │
+              │ Switch    │   │ dual fmt  │
+              │ Filter    │   │ quirk     │
+              └───────────┘   └───────────┘
+
+  key_components:
+    - name: "KnowledgeRegistry"
+      file: "src/knowledge/core/registry.ts"
+      purpose: "Central access point for all knowledge queries"
+
+    - name: "NodeSchema"
+      file: "src/knowledge/types.ts"
+      purpose: "Type definition for node schemas"
+
+    - name: "QuirkEntry"
+      file: "src/knowledge/types.ts"
+      purpose: "Type definition for known issues"
+
+    - name: "MCP Tool Handlers"
+      file: "src/knowledge/mcp-tool-handlers.ts"
+      purpose: "5 MCP tools for AI access"
+
+  mcp_tools:
+    - name: "schema_get"
+      purpose: "Get schema for specific node type"
+      example: "schema_get('If')"
+
+    - name: "schema_list"
+      purpose: "List all available schemas"
+      example: "schema_list()"
+
+    - name: "quirks_check"
+      purpose: "Check if node has known quirks"
+      example: "quirks_check('If')"
+
+    - name: "quirks_search"
+      purpose: "Search quirks by keyword"
+      example: "quirks_search('format')"
+
+    - name: "schema_validate"
+      purpose: "Validate node configuration against schema"
+      example: "schema_validate('If', { combinator: 'and', ... })"
+
+  file_structure: |
+    src/knowledge/
+    ├── index.ts              # Public exports
+    ├── types.ts              # NodeSchema, QuirkEntry, ValidationResult
+    ├── core/
+    │   └── registry.ts       # KnowledgeRegistry class
+    ├── schemas/
+    │   ├── index.ts          # Schema registry
+    │   ├── if-node.ts        # If-node schema
+    │   ├── switch-node.ts    # Switch-node schema
+    │   └── filter-node.ts    # Filter-node schema
+    ├── quirks/
+    │   ├── index.ts          # Quirk registry
+    │   └── if-node.ts        # If-node dual format quirk
+    ├── mcp-tool-definitions.ts   # Tool schemas for MCP
+    └── mcp-tool-handlers.ts      # Tool implementation
+
+  deployment:
+    date: "2026-01-22 14:39 UTC"
+    version: "v1.2.0"
+    commit: "a660f5b"
+    tests_passing: 351
+    coverage: "100% knowledge layer"
+
+# ============================================================================
+# EVOLUTION PATH
+# ============================================================================
+evolution_path:
+  can_change:
+    - item: "Add more node schemas"
+      when: "AI encounters node type without schema"
+      how: "Add file to src/knowledge/schemas/, register in index"
+      priority: "High - based on usage patterns"
+
+    - item: "Add more quirks"
+      when: "New N8N API issue discovered"
+      how: "Add to src/knowledge/quirks/, document symptoms and solution"
+      priority: "High - prevents future debugging"
+
+    - item: "Move schemas to Redis"
+      when: "Hot updates required without restart"
+      how: |
+        1. Create Redis schema storage
+        2. Modify KnowledgeRegistry to check Redis first
+        3. Fall back to code-based schemas
+        4. Keep code schemas as defaults
+      priority: "Low - not currently needed"
+
+    - item: "Add Phase 4A validation layer"
+      when: "After confirming Phase 3A value"
+      how: |
+        1. Add pre-commit validation gate
+        2. Implement auto-fix for known quirks
+        3. Block or warn based on severity
+      priority: "Medium - planned for future"
+
+    - item: "Add AI-contributed knowledge"
+      when: "AI discovers new quirk during operation"
+      how: |
+        1. AI reports quirk to separate API
+        2. Human reviews and approves
+        3. Approved quirk added to Redis layer
+      priority: "Low - future enhancement"
+
+  should_not_change:
+    - item: "KnowledgeRegistry interface"
+      reason: "MCP tools depend on this API"
+      impact: "Breaking change for all knowledge tool consumers"
+
+    - item: "Schema format (NodeSchema type)"
+      reason: "Validation logic depends on consistent format"
+      impact: "Would require updating all existing schemas"
+
+    - item: "Quirk format (QuirkEntry type)"
+      reason: "Search and display logic depends on format"
+      impact: "Would require updating all existing quirks"
+
+    - item: "MCP tool names"
+      reason: "AI agents reference tools by name"
+      impact: "Breaking change for AI prompts and workflows"
+
+# ============================================================================
+# SUCCESS METRICS
+# ============================================================================
+success_metrics:
+  measured_outcomes:
+    - metric: "Debug time for If-node issues"
+      before: "2+ hours"
+      after: "<5 minutes"
+      target: "<5 minutes"
+      status: "✅ Achieved"
+
+    - metric: "AI self-service rate"
+      before: "0%"
+      after: "90% for covered nodes"
+      target: ">80%"
+      status: "✅ Achieved"
+
+    - metric: "Schema coverage"
+      before: "0 nodes"
+      after: "3 nodes (If, Switch, Filter)"
+      target: "3+ critical nodes"
+      status: "✅ Achieved"
+
+    - metric: "Quirks documented"
+      before: "0"
+      after: "1 critical (If-node dual format)"
+      target: "1+ critical"
+      status: "✅ Achieved"
+
+    - metric: "Test coverage (knowledge layer)"
+      before: "0%"
+      after: "100%"
+      target: ">90%"
+      status: "✅ Achieved"
+
+    - metric: "Production issues"
+      before: "N/A"
+      after: "0"
+      target: "0"
+      status: "✅ Achieved"
+
+  uat_results:
+    total_steps: 27
+    passed: 27
+    pass_rate: "100%"
+    tests:
+      - name: "Schema Get UAT"
+        steps: 8
+        result: "PASSED"
+        recommendation: "APPROVE for production"
+
+      - name: "Quirks Check UAT"
+        steps: 9
+        result: "PASSED"
+        recommendation: "APPROVE for production"
+
+      - name: "Builder Workflow UAT"
+        steps: 10
+        result: "PASSED"
+        recommendation: "APPROVE for production"
+
+# ============================================================================
+# REFERENCES
+# ============================================================================
+references:
+  decision_ids:
+    - id: "9162b4e7-368a-4d5c-b1c7-58f7ec6fa2c9"
+      title: "Platform Evolution - Knowledge Layer Architecture"
+      date: "2026-01-22"
+
+    - id: "03a09981-9694-4a43-906d-32d11247e80e"
+      title: "Phase 3A Knowledge Layer - Production Deployment"
+      date: "2026-01-22"
+
+  related_docs:
+    - path: "docs/SERVICE-BLUEPRINT.yaml"
+      purpose: "Overall architecture context"
+
+    - path: "docs/MIDDLEWARE-ARCHITECTURE.yaml"
+      purpose: "How hybrid middleware works"
+
+    - path: "docs/KNOWLEDGE-LAYER-USAGE.md"
+      purpose: "User guide for knowledge tools"
+
+    - path: "docs/GANTT-ROADMAP.md"
+      purpose: "Project timeline"
+
+  key_files:
+    - path: "src/knowledge/"
+      purpose: "Knowledge layer implementation"
+
+    - path: "__tests__/unit/knowledge/"
+      purpose: "Knowledge layer tests"
+
+    - path: "__tests__/integration/builder-knowledge-layer.test.ts"
+      purpose: "Builder integration tests"

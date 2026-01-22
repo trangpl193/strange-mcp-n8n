@@ -1,0 +1,619 @@
+# ============================================================================
+# Middleware Architecture: Hybrid Approach
+# ============================================================================
+# Template: AI-DOC-TEMPLATE.yaml v1.0
+# ============================================================================
+
+metadata:
+  title: "Middleware Architecture: Hybrid Approach"
+  purpose: |
+    Explain the hybrid middleware design (TypeScript code + Redis) used in
+    MCP N8N. Documents WHY this split was chosen and HOW each layer functions.
+  audience: "AI agents"
+  last_updated: "2026-01-23"
+  related_decisions:
+    - "9162b4e7-368a-4d5c-b1c7-58f7ec6fa2c9"  # Platform Evolution Architecture
+    - "74c4fa6a-40c9-4fd2-9b9c-04c58c39f40c"  # Transport Standardization
+  phase: "Phase 3A Complete"
+  status: "active"
+
+# ============================================================================
+# OVERVIEW (TL;DR)
+# ============================================================================
+overview: |
+  MCP N8N uses a hybrid middleware architecture: business logic in TypeScript
+  code, stateful sessions in Redis. This split optimizes for type safety
+  (code) while enabling horizontal scaling and persistence (Redis).
+
+  Key components:
+  - LOGIC LAYER (TypeScript): WorkflowTransformer, NodeMappings, KnowledgeRegistry
+  - STATE LAYER (Redis): Builder sessions, draft workflows, future extended knowledge
+
+  Use this when: Evaluating where new functionality should live (code vs Redis),
+  understanding state management, or planning performance optimizations.
+
+# ============================================================================
+# DECISION CONTEXT
+# ============================================================================
+decision_context:
+  problem_statement: |
+    MCP N8N needs middleware to:
+    1. Transform simplified workflow DSL to complex N8N JSON
+    2. Store builder sessions (drafts) across multiple tool calls
+    3. Provide schema knowledge for validation
+    4. Enable AI self-service diagnosis
+
+    **Key Question:** Where should middleware logic and state live?
+
+  trigger_event: |
+    During Phase 2A (Builder Pattern), the need for session persistence became
+    clear. Builder workflows span multiple tool calls (start → add_node →
+    connect → preview → commit). State must persist between calls.
+
+  constraints:
+    table: |
+      | Constraint | Type | Impact |
+      |------------|------|--------|
+      | Type safety required | Technical | Logic must be TypeScript |
+      | Session persistence | Technical | State needs external storage |
+      | Multi-instance deployment | Technical | State must be shared |
+      | Hot updates desired | Design | Some config should be runtime-updateable |
+      | Development speed | Resource | Must leverage existing TypeScript skills |
+      | Redis already in stack | Technical | Redis available for sessions |
+
+  stakeholders:
+    - who: "AI Agents"
+      concern: "Consistent, reliable workflow building"
+      impact: "Sessions must not be lost mid-workflow"
+
+    - who: "Developer (User)"
+      concern: "Maintainable, debuggable code"
+      impact: "Logic in TypeScript is easier to debug than Lua scripts"
+
+    - who: "Infrastructure"
+      concern: "Horizontal scaling"
+      impact: "Shared state enables multiple MCP instances"
+
+# ============================================================================
+# OPTIONS EVALUATED
+# ============================================================================
+options_evaluated:
+  options:
+    - id: "A"
+      name: "Pure Code (In-Memory)"
+      approach: |
+        All logic AND state in TypeScript. Sessions stored in process memory.
+        Simple, no external dependencies for state.
+      architecture: |
+        ┌────────────────────────────────────┐
+        │  Node.js Process                   │
+        │  ├─ Logic (TypeScript)            │
+        │  └─ State (in-memory Map)         │
+        └────────────────────────────────────┘
+      pros:
+        - "Simplest architecture"
+        - "No Redis dependency"
+        - "Fastest access (no network)"
+        - "Easy debugging"
+      cons:
+        - "State lost on restart"
+        - "Cannot scale horizontally"
+        - "Session limit = process memory"
+        - "No persistence across deployments"
+      effort: "S"
+      risk: "High (data loss)"
+
+    - id: "B"
+      name: "Pure Redis"
+      approach: |
+        All logic in Lua scripts, all state in Redis. TypeScript only for
+        HTTP/MCP protocol handling.
+      architecture: |
+        ┌────────────────────────────────────┐
+        │  Node.js Process                   │
+        │  └─ Protocol handling only         │
+        └──────────────┬─────────────────────┘
+                       │
+                       ▼
+        ┌────────────────────────────────────┐
+        │  Redis                             │
+        │  ├─ Logic (Lua scripts)           │
+        │  └─ State (keys/hashes)           │
+        └────────────────────────────────────┘
+      pros:
+        - "Hot updates (change Lua, no restart)"
+        - "Fully distributed"
+        - "State persistence"
+        - "Can scale infinitely"
+      cons:
+        - "No TypeScript type safety"
+        - "Lua debugging is harder"
+        - "Complex schema transformations in Lua"
+        - "All developers must know Lua"
+      effort: "L"
+      risk: "Medium"
+
+    - id: "C"
+      name: "Hybrid (Code Logic + Redis State)"
+      approach: |
+        Business logic in TypeScript (type-safe, testable).
+        Stateful sessions in Redis (persistent, scalable).
+        Best of both worlds.
+      architecture: |
+        ┌────────────────────────────────────┐
+        │  Node.js Process                   │
+        │  ├─ LOGIC (TypeScript)            │
+        │  │   ├─ WorkflowTransformer       │
+        │  │   ├─ NodeMappings              │
+        │  │   └─ KnowledgeRegistry         │
+        │  │                                 │
+        │  └─ STATE ACCESS (TypeScript)     │
+        │      └─ SessionStore interface    │
+        └──────────────┬─────────────────────┘
+                       │
+                       ▼
+        ┌────────────────────────────────────┐
+        │  Redis                             │
+        │  └─ STATE (sessions, drafts)      │
+        └────────────────────────────────────┘
+      pros:
+        - "Type safety for logic"
+        - "Easy debugging (TypeScript)"
+        - "Session persistence"
+        - "Horizontal scaling"
+        - "Testable (mock SessionStore)"
+      cons:
+        - "Two systems to manage"
+        - "Network latency for state access"
+        - "Logic updates require restart"
+      effort: "M"
+      risk: "Low"
+
+    - id: "D"
+      name: "N8N Workflows as Middleware"
+      approach: |
+        Use N8N itself to run middleware logic. Call N8N workflows for
+        transformations, store state in N8N.
+      architecture: |
+        ┌────────────────────────────────────┐
+        │  MCP N8N Server                    │
+        └──────────────┬─────────────────────┘
+                       │
+                       ▼
+        ┌────────────────────────────────────┐
+        │  N8N Instance                      │
+        │  ├─ Middleware workflows          │
+        │  └─ State (N8N database)          │
+        └────────────────────────────────────┘
+      pros:
+        - "Single platform"
+        - "Visual workflow editing"
+        - "N8N handles state"
+      cons:
+        - "Circular dependency (MCP→N8N→MCP?)"
+        - "Performance overhead"
+        - "Debugging complexity"
+        - "N8N must be running for MCP to work"
+      effort: "M"
+      risk: "High (complexity)"
+
+  comparison_table: |
+    | Criteria | Pure Code | Pure Redis | Hybrid | N8N Workflows |
+    |----------|-----------|------------|--------|---------------|
+    | Type Safety | ✅ | ❌ | ✅ | ❌ |
+    | State Persistence | ❌ | ✅ | ✅ | ✅ |
+    | Horizontal Scale | ❌ | ✅ | ✅ | ⚠️ |
+    | Debug Experience | ✅ | ❌ | ✅ | ❌ |
+    | Hot Updates | ❌ | ✅ | ⚠️ | ✅ |
+    | Complexity | Low | Medium | Medium | High |
+    | Dependencies | None | Redis | Redis | N8N |
+    | Effort | S | L | M | M |
+    | Risk | High | Medium | Low | High |
+
+# ============================================================================
+# DECISION RATIONALE
+# ============================================================================
+decision_rationale:
+  chosen: "C - Hybrid (Code Logic + Redis State)"
+
+  why_chosen:
+    - reason: "Type safety for complex transformations"
+      detail: |
+        WorkflowTransformer handles complex N8N JSON structure.
+        TypeScript types catch errors at compile time.
+        Lua would require runtime-only validation.
+
+    - reason: "Session persistence without code changes"
+      detail: |
+        Builder sessions must survive server restarts.
+        Redis provides persistence out-of-box.
+        In-memory would lose all active sessions on deploy.
+
+    - reason: "Horizontal scaling ready"
+      detail: |
+        Multiple MCP instances can share session state.
+        Important for future high-availability deployment.
+        Pure code approach limits to single instance.
+
+    - reason: "Developer experience"
+      detail: |
+        Team knows TypeScript well.
+        Debugging TypeScript is familiar.
+        Lua would require new skills.
+
+    - reason: "Testability"
+      detail: |
+        SessionStore is an interface.
+        Unit tests use in-memory implementation.
+        Integration tests use Redis.
+        Clean separation of concerns.
+
+  why_not_others:
+    option_a: |
+      Pure Code (in-memory) loses sessions on restart. During development
+      and updates, all active builder sessions would be lost. Unacceptable
+      for production use. Also prevents horizontal scaling.
+
+    option_b: |
+      Pure Redis requires Lua for logic. WorkflowTransformer is ~400 lines
+      of complex TypeScript with nested transformations. Rewriting in Lua
+      would lose type safety and make debugging significantly harder.
+
+    option_d: |
+      N8N Workflows creates circular dependency. If N8N is down, MCP cannot
+      function. Also adds latency (HTTP calls to N8N for each operation).
+      Debugging would require understanding both MCP code and N8N workflows.
+
+  confidence:
+    level: "High"
+    reasoning: |
+      - Pattern proven in production since Phase 2A
+      - Zero session-related issues reported
+      - Horizontal scaling tested successfully
+      - Developer productivity high with TypeScript
+      - Clear separation makes testing straightforward
+
+# ============================================================================
+# TRADE-OFFS ACCEPTED
+# ============================================================================
+trade_offs_accepted:
+  table: |
+    | We Gained | We Sacrificed | Mitigation |
+    |-----------|---------------|------------|
+    | Type safety | Hot logic updates | Accept restart for logic changes |
+    | Debug experience | Lua flexibility | Use Lua only if TypeScript proves insufficient |
+    | Session persistence | In-memory speed | Redis is fast enough (<10ms) |
+    | Clean separation | Single system | Worth complexity for scalability |
+    | Testability | Simplicity | Interface abstraction keeps it manageable |
+
+  key_trade_off: |
+    **Core Trade-off: Type Safety vs. Hot Updates**
+
+    We prioritized TypeScript type safety over hot updates for business logic.
+    This means:
+    - Logic changes require code deployment (not just config update)
+    - But we catch schema/type errors at compile time
+    - Debugging is significantly easier
+
+    Mitigation: For truly dynamic content (extended knowledge), Redis layer
+    can be used in future without changing core logic.
+
+# ============================================================================
+# IMPLEMENTATION SUMMARY
+# ============================================================================
+implementation_summary:
+  architecture: |
+    ┌─────────────────────────────────────────────────────────────────────┐
+    │                    HYBRID MIDDLEWARE ARCHITECTURE                   │
+    └─────────────────────────────────────────────────────────────────────┘
+
+    ┌─────────────────────────────────────────────────────────────────────┐
+    │  LOGIC LAYER (TypeScript)                                          │
+    │  Location: src/services/, src/knowledge/                            │
+    ├─────────────────────────────────────────────────────────────────────┤
+    │                                                                     │
+    │  ┌───────────────────────┐    ┌───────────────────────┐            │
+    │  │  WorkflowTransformer  │    │  NodeMappings         │            │
+    │  │  ─────────────────    │    │  ───────────          │            │
+    │  │  • Simplified → N8N   │    │  • Node type → config │            │
+    │  │  • Connection gen     │    │  • Default values     │            │
+    │  │  • Position calc      │    │  • Parameter mapping  │            │
+    │  └───────────────────────┘    └───────────────────────┘            │
+    │                                                                     │
+    │  ┌───────────────────────┐    ┌───────────────────────┐            │
+    │  │  KnowledgeRegistry    │    │  ValidationEngine     │            │
+    │  │  ──────────────────   │    │  ────────────────     │            │
+    │  │  • Schema lookup      │    │  • Schema validation  │            │
+    │  │  • Quirk checking     │    │  • Quirk detection    │            │
+    │  │  • Version awareness  │    │  • Error reporting    │            │
+    │  └───────────────────────┘    └───────────────────────┘            │
+    │                                                                     │
+    └─────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    │ SessionStore interface
+                                    │
+                                    ▼
+    ┌─────────────────────────────────────────────────────────────────────┐
+    │  STATE LAYER (Redis)                                                │
+    │  Location: External Redis instance                                  │
+    ├─────────────────────────────────────────────────────────────────────┤
+    │                                                                     │
+    │  ┌───────────────────────────────────────────────────────────────┐ │
+    │  │  Builder Sessions                                             │ │
+    │  │  Key: mcp:session:{sessionId}                                 │ │
+    │  │  TTL: 30 minutes                                              │ │
+    │  │  Content: { name, nodes[], connections[], credentials }       │ │
+    │  └───────────────────────────────────────────────────────────────┘ │
+    │                                                                     │
+    │  ┌───────────────────────────────────────────────────────────────┐ │
+    │  │  (Future) Extended Knowledge                                  │ │
+    │  │  Key: mcp:knowledge:{type}:{nodeType}                        │ │
+    │  │  Purpose: Hot-updateable schemas, quirks                     │ │
+    │  └───────────────────────────────────────────────────────────────┘ │
+    │                                                                     │
+    └─────────────────────────────────────────────────────────────────────┘
+
+  logic_layer:
+    purpose: "Business logic, transformations, validation"
+    language: "TypeScript"
+    deployment: "Compiled into server binary"
+    update_method: "Code deployment + restart"
+
+    components:
+      - name: "WorkflowTransformer"
+        file: "src/services/workflow-transformer.ts"
+        lines: "~400"
+        responsibility: |
+          Transform simplified workflow DSL to N8N JSON format.
+          Handles node positioning, connection generation, multi-output ports.
+
+      - name: "NodeMappings"
+        file: "src/schemas/node-mappings.ts"
+        lines: "~200"
+        responsibility: |
+          Map simplified node types to N8N node configurations.
+          Provide default values for each node type.
+
+      - name: "KnowledgeRegistry"
+        file: "src/knowledge/core/registry.ts"
+        lines: "~150"
+        responsibility: |
+          Central access point for schemas and quirks.
+          Currently code-based, extensible to Redis.
+
+      - name: "ValidationEngine"
+        file: "src/knowledge/mcp-tool-handlers.ts"
+        lines: "~100"
+        responsibility: |
+          Validate node configurations against schemas.
+          Detect known quirks and report warnings.
+
+  state_layer:
+    purpose: "Persistent state, session storage"
+    storage: "Redis"
+    update_method: "Runtime (no restart needed)"
+
+    data_structures:
+      - name: "Builder Session"
+        key_pattern: "mcp:session:{sessionId}"
+        ttl: "30 minutes"
+        structure: |
+          {
+            "id": "uuid",
+            "name": "Workflow Name",
+            "description": "Optional description",
+            "nodes": [...],      // Draft nodes
+            "connections": [...], // Draft connections
+            "credentials": {...}, // Credential mappings
+            "createdAt": "ISO timestamp",
+            "updatedAt": "ISO timestamp"
+          }
+
+      - name: "Session Index"
+        key_pattern: "mcp:sessions:active"
+        type: "SET"
+        purpose: "List all active session IDs for cleanup"
+
+  session_store_interface:
+    purpose: "Abstraction for testing and flexibility"
+    file: "src/services/session-store-factory.ts"
+    implementations:
+      - name: "RedisSessionStore"
+        file: "src/services/redis-session-store.ts"
+        use_case: "Production, integration tests"
+
+      - name: "InMemorySessionStore"
+        file: "src/services/builder-session-store.ts"
+        use_case: "Unit tests, development without Redis"
+
+    interface: |
+      interface SessionStore {
+        get(sessionId: string): Promise<BuilderSession | null>
+        set(sessionId: string, session: BuilderSession): Promise<void>
+        delete(sessionId: string): Promise<void>
+        list(): Promise<SessionSummary[]>
+        cleanup(): Promise<void>
+      }
+
+# ============================================================================
+# DATA FLOW EXAMPLES
+# ============================================================================
+data_flows:
+  builder_workflow:
+    description: "Step-by-step workflow building using hybrid architecture"
+    diagram: |
+      ┌──────────┐     ┌──────────────┐     ┌─────────────┐     ┌───────┐
+      │ AI Agent │     │  Logic Layer │     │ State Layer │     │ N8N   │
+      └────┬─────┘     └──────┬───────┘     └──────┬──────┘     └───┬───┘
+           │                  │                    │                │
+           │ builder_start    │                    │                │
+           │─────────────────►│                    │                │
+           │                  │ store session      │                │
+           │                  │───────────────────►│                │
+           │                  │                    │                │
+           │ builder_add_node │                    │                │
+           │─────────────────►│                    │                │
+           │                  │ validate (schemas) │                │
+           │                  │◄──────────────────┐│                │
+           │                  │ load session      ││                │
+           │                  │───────────────────►│                │
+           │                  │ update session    ││                │
+           │                  │───────────────────►│                │
+           │                  │                    │                │
+           │ builder_preview  │                    │                │
+           │─────────────────►│                    │                │
+           │                  │ load + validate   │                │
+           │                  │◄─────────────────►│                │
+           │◄─ warnings ──────│                    │                │
+           │                  │                    │                │
+           │ builder_commit   │                    │                │
+           │─────────────────►│                    │                │
+           │                  │ load session      │                │
+           │                  │───────────────────►│                │
+           │                  │ transform (logic) │                │
+           │                  │◄──────────────────┐│                │
+           │                  │                   ││  create workflow
+           │                  │──────────────────────────────────►│
+           │                  │ delete session    │                │
+           │                  │───────────────────►│                │
+           │◄─ workflow ID────│                    │                │
+           │                  │                    │                │
+
+    steps:
+      - step: 1
+        action: "builder_start"
+        logic: "Create session object"
+        state: "Store in Redis with TTL"
+
+      - step: 2
+        action: "builder_add_node (repeated)"
+        logic: "Validate against schemas, detect quirks"
+        state: "Update session in Redis"
+
+      - step: 3
+        action: "builder_preview"
+        logic: "Full validation, generate warnings"
+        state: "Read session from Redis"
+
+      - step: 4
+        action: "builder_commit"
+        logic: "Transform to N8N format, call N8N API"
+        state: "Delete session from Redis"
+
+# ============================================================================
+# EVOLUTION PATH
+# ============================================================================
+evolution_path:
+  can_change:
+    - item: "Add extended knowledge to Redis"
+      when: "Hot schema updates needed without restart"
+      how: |
+        1. Add Redis keys: mcp:knowledge:schema:{nodeType}
+        2. Modify KnowledgeRegistry to check Redis first
+        3. Fall back to code-based schemas
+        4. Add admin tool to update Redis knowledge
+      priority: "Low - not currently needed"
+
+    - item: "Add session clustering"
+      when: "High availability deployment required"
+      how: |
+        Redis already supports clustering.
+        Just configure Redis cluster, no code changes.
+      priority: "Low"
+
+    - item: "Add session analytics"
+      when: "Need usage insights"
+      how: |
+        Add Redis streams for session events.
+        Track: creation, node additions, commits, abandons.
+      priority: "Low"
+
+    - item: "Move more state to Redis"
+      when: "Need to share more data across instances"
+      how: |
+        Follow SessionStore pattern.
+        Create interface, implement Redis version.
+      priority: "Medium"
+
+  should_not_change:
+    - item: "Logic in TypeScript"
+      reason: "Type safety, debugging, team skills"
+      impact: "Would require significant retraining"
+
+    - item: "SessionStore interface"
+      reason: "Test infrastructure depends on it"
+      impact: "Would break all session-related tests"
+
+    - item: "Redis for sessions"
+      reason: "Proven pattern, already scaled"
+      impact: "Would require new state solution"
+
+    - item: "TTL-based session cleanup"
+      reason: "Prevents memory leaks"
+      impact: "Would require manual cleanup mechanism"
+
+# ============================================================================
+# SUCCESS METRICS
+# ============================================================================
+success_metrics:
+  measured_outcomes:
+    - metric: "Session persistence across restarts"
+      before: "N/A (no sessions)"
+      after: "100%"
+      target: "100%"
+      status: "✅ Achieved"
+
+    - metric: "Session access latency"
+      before: "N/A"
+      after: "<10ms"
+      target: "<50ms"
+      status: "✅ Achieved"
+
+    - metric: "Session-related bugs"
+      before: "N/A"
+      after: "0"
+      target: "0"
+      status: "✅ Achieved"
+
+    - metric: "Horizontal scaling"
+      before: "Not possible"
+      after: "Tested with 2 instances"
+      target: "Possible"
+      status: "✅ Achieved"
+
+    - metric: "Test coverage (session logic)"
+      before: "0%"
+      after: ">80%"
+      target: ">80%"
+      status: "✅ Achieved"
+
+# ============================================================================
+# REFERENCES
+# ============================================================================
+references:
+  decision_ids:
+    - id: "9162b4e7-368a-4d5c-b1c7-58f7ec6fa2c9"
+      title: "Platform Evolution - Knowledge Layer Architecture"
+
+    - id: "74c4fa6a-40c9-4fd2-9b9c-04c58c39f40c"
+      title: "Transport Standardization Strategy"
+
+  related_docs:
+    - path: "docs/SERVICE-BLUEPRINT.yaml"
+      purpose: "Overall architecture context"
+
+    - path: "docs/KNOWLEDGE-LAYER-RATIONALE.yaml"
+      purpose: "Why knowledge layer exists"
+
+  key_files:
+    - path: "src/services/workflow-transformer.ts"
+      purpose: "Core transformation logic"
+
+    - path: "src/services/redis-session-store.ts"
+      purpose: "Redis session implementation"
+
+    - path: "src/services/session-store-factory.ts"
+      purpose: "Session store abstraction"
+
+    - path: "src/knowledge/core/registry.ts"
+      purpose: "Knowledge registry (extensible to Redis)"

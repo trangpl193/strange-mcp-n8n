@@ -1,0 +1,663 @@
+# ============================================================================
+# MCP N8N Service Blueprint
+# ============================================================================
+# Template: AI-DOC-TEMPLATE.yaml v1.0
+# ============================================================================
+
+metadata:
+  title: "MCP N8N Service Blueprint"
+  purpose: |
+    Complete architectural reference for AI agents managing MCP N8N platform.
+    Defines all layers, components, data flows, and integration points.
+  audience: "AI agents"
+  last_updated: "2026-01-23"
+  related_decisions:
+    - "9d64870b-7db5-490e-bf55-a54e130952ca"  # Gantt Roadmap + Service Blueprint
+    - "74c4fa6a-40c9-4fd2-9b9c-04c58c39f40c"  # Transport Standardization
+    - "03a09981-9694-4a43-906d-32d11247e80e"  # Phase 3A Deployment
+  phase: "Phase 3A Complete"
+  status: "active"
+
+# ============================================================================
+# OVERVIEW (TL;DR)
+# ============================================================================
+overview: |
+  MCP N8N is a Model Context Protocol server providing AI-native N8N workflow
+  management through 22 MCP tools organized across 6 domain layers. Built on
+  @strange/mcp-core transport abstraction with hybrid middleware (TypeScript
+  logic + Redis state).
+
+  Key architecture: Layered design separating transport, tools, services,
+  knowledge, types, and config. Transport standardized via mcp-core v1.2.0.
+
+  Use this when: Understanding system structure, adding new tools, debugging
+  integration issues, planning feature additions, or evaluating architecture
+  changes.
+
+# ============================================================================
+# ARCHITECTURE LAYERS
+# ============================================================================
+architecture:
+  diagram: |
+    ┌─────────────────────────────────────────────────────────────────────┐
+    │                         MCP N8N STACK                               │
+    │                         Version: 1.2.0                              │
+    ├─────────────────────────────────────────────────────────────────────┤
+    │                                                                     │
+    │  ┌─────────────────────────────────────────────────────────────┐   │
+    │  │  LAYER 1: TRANSPORT (from @strange/mcp-core)                │   │
+    │  │  ├─ StreamableHttpServer                                    │   │
+    │  │  ├─ SSE (Server-Sent Events) for responses                  │   │
+    │  │  ├─ Session management (mcp-session-id header)              │   │
+    │  │  └─ Authentication (API key + CF Access)                    │   │
+    │  └─────────────────────────────────────────────────────────────┘   │
+    │                              │                                      │
+    │                              ▼                                      │
+    │  ┌─────────────────────────────────────────────────────────────┐   │
+    │  │  LAYER 2: TOOLS (22 MCP Tools)                              │   │
+    │  │  ├─ Workflow Tools (4): list, get, create, update           │   │
+    │  │  ├─ Builder Tools (9): session-based workflow builder       │   │
+    │  │  ├─ Node Tools (2): get, update individual nodes            │   │
+    │  │  ├─ Execution Tools (2): list, debug                        │   │
+    │  │  └─ Knowledge Tools (5): schema_*, quirks_*, validate       │   │
+    │  └─────────────────────────────────────────────────────────────┘   │
+    │                              │                                      │
+    │                              ▼                                      │
+    │  ┌─────────────────────────────────────────────────────────────┐   │
+    │  │  LAYER 3: SERVICES                                          │   │
+    │  │  ├─ N8NClient (HTTP client to N8N API)                      │   │
+    │  │  ├─ WorkflowTransformer (simplified ↔ N8N JSON)             │   │
+    │  │  ├─ SessionStore (Redis for builder sessions)               │   │
+    │  │  └─ KnowledgeRegistry (schemas + quirks)                    │   │
+    │  └─────────────────────────────────────────────────────────────┘   │
+    │                              │                                      │
+    │                              ▼                                      │
+    │  ┌─────────────────────────────────────────────────────────────┐   │
+    │  │  LAYER 4: KNOWLEDGE (Phase 3A)                              │   │
+    │  │  ├─ Node Schemas (If/Switch/Filter)                         │   │
+    │  │  ├─ Quirks Database (known N8N issues)                      │   │
+    │  │  └─ Validation Rules                                        │   │
+    │  └─────────────────────────────────────────────────────────────┘   │
+    │                              │                                      │
+    │                              ▼                                      │
+    │  ┌─────────────────────────────────────────────────────────────┐   │
+    │  │  LAYER 5: TYPES                                             │   │
+    │  │  └─ Shared TypeScript interfaces                            │   │
+    │  └─────────────────────────────────────────────────────────────┘   │
+    │                              │                                      │
+    │                              ▼                                      │
+    │  ┌─────────────────────────────────────────────────────────────┐   │
+    │  │  LAYER 6: CONFIG                                            │   │
+    │  │  └─ Environment variables, credentials, feature flags       │   │
+    │  └─────────────────────────────────────────────────────────────┘   │
+    │                                                                     │
+    └─────────────────────────────────────────────────────────────────────┘
+
+  layers:
+    # ------------------------------------------------------------------------
+    # Layer 1: Transport
+    # ------------------------------------------------------------------------
+    - id: "L1"
+      name: "Transport"
+      purpose: "Handle MCP protocol communication"
+      source: "@strange/mcp-core v1.2.0"
+      components:
+        - name: "StreamableHttpServer"
+          file: "node_modules/@strange/mcp-core/src/transport/StreamableHttpServer.ts"
+          responsibility: "HTTP server with SSE, session management"
+          lines: "~250"
+
+        - name: "createStreamableHttpServer()"
+          file: "node_modules/@strange/mcp-core/src/transport/StreamableHttpServer.ts"
+          responsibility: "Factory function returning { server, cleanup }"
+
+        - name: "Authentication"
+          file: "node_modules/@strange/mcp-core/src/middleware/auth.ts"
+          responsibility: "API key validation"
+
+        - name: "SessionCleanup"
+          file: "node_modules/@strange/mcp-core/src/middleware/SessionCleanup.ts"
+          responsibility: "Periodic cleanup of expired sessions"
+
+      endpoints:
+        - path: "POST /mcp"
+          purpose: "MCP JSON-RPC 2.0 requests"
+          auth: "API key header"
+
+        - path: "GET /health"
+          purpose: "Health check"
+          auth: "None"
+
+      decision_ref: "74c4fa6a-40c9-4fd2-9b9c-04c58c39f40c"
+
+    # ------------------------------------------------------------------------
+    # Layer 2: Tools
+    # ------------------------------------------------------------------------
+    - id: "L2"
+      name: "Tools"
+      purpose: "MCP tool implementations"
+      source: "src/tools/"
+      components:
+        workflow_tools:
+          count: 4
+          list:
+            - name: "workflow_list"
+              file: "src/tools/workflow-list.ts"
+              purpose: "List N8N workflows with filtering"
+
+            - name: "workflow_get"
+              file: "src/tools/workflow-get.ts"
+              purpose: "Get workflow details by ID"
+
+            - name: "workflow_create"
+              file: "src/tools/workflow-create.ts"
+              purpose: "Create workflow from simplified schema"
+
+            - name: "workflow_update"
+              file: "src/tools/workflow-update.ts"
+              purpose: "Update existing workflow"
+
+        builder_tools:
+          count: 9
+          pattern: "Session-based draft workflow builder"
+          state: "Redis (TTL 30min)"
+          list:
+            - name: "builder_start"
+              file: "src/tools/builder-start.ts"
+              purpose: "Start new builder session"
+
+            - name: "builder_add_node"
+              file: "src/tools/builder-add-node.ts"
+              purpose: "Add node to draft (with validation)"
+
+            - name: "builder_connect"
+              file: "src/tools/builder-connect.ts"
+              purpose: "Connect nodes in draft"
+
+            - name: "builder_preview"
+              file: "src/tools/builder-preview.ts"
+              purpose: "Preview draft with validation warnings"
+
+            - name: "builder_commit"
+              file: "src/tools/builder-commit.ts"
+              purpose: "Commit draft to N8N"
+
+            - name: "builder_discard"
+              file: "src/tools/builder-discard.ts"
+              purpose: "Discard builder session"
+
+            - name: "builder_list"
+              file: "src/tools/builder-list.ts"
+              purpose: "List pending sessions"
+
+            - name: "builder_update_node"
+              file: "src/tools/builder-update-node.ts"
+              purpose: "Update node in draft"
+
+            - name: "builder_remove_node"
+              file: "src/tools/builder-remove-node.ts"
+              purpose: "Remove node from draft"
+
+        node_tools:
+          count: 2
+          list:
+            - name: "node_get"
+              file: "src/tools/node-get.ts"
+              purpose: "Get single node from workflow"
+
+            - name: "node_update"
+              file: "src/tools/node-update.ts"
+              purpose: "Update single node (handles workflow PUT)"
+
+        execution_tools:
+          count: 2
+          list:
+            - name: "execution_list"
+              file: "src/tools/execution-list.ts"
+              purpose: "List workflow executions"
+
+            - name: "execution_debug"
+              file: "src/tools/execution-debug.ts"
+              purpose: "Get execution details with node data"
+
+        knowledge_tools:
+          count: 5
+          phase: "Phase 3A"
+          list:
+            - name: "schema_get"
+              file: "src/knowledge/mcp-tool-handlers.ts"
+              purpose: "Get node schema by type"
+
+            - name: "schema_list"
+              file: "src/knowledge/mcp-tool-handlers.ts"
+              purpose: "List available schemas"
+
+            - name: "quirks_check"
+              file: "src/knowledge/mcp-tool-handlers.ts"
+              purpose: "Check node for known quirks"
+
+            - name: "quirks_search"
+              file: "src/knowledge/mcp-tool-handlers.ts"
+              purpose: "Search quirks by keyword"
+
+            - name: "schema_validate"
+              file: "src/knowledge/mcp-tool-handlers.ts"
+              purpose: "Validate node configuration"
+
+      total_tools: 22
+
+    # ------------------------------------------------------------------------
+    # Layer 3: Services
+    # ------------------------------------------------------------------------
+    - id: "L3"
+      name: "Services"
+      purpose: "Business logic and external integrations"
+      source: "src/services/"
+      components:
+        - name: "N8NClient"
+          file: "src/services/n8n-client.ts"
+          purpose: "HTTP client to N8N REST API"
+          methods:
+            - "listWorkflows()"
+            - "getWorkflow(id)"
+            - "createWorkflow(data)"
+            - "updateWorkflow(id, data)"
+            - "listExecutions()"
+            - "getExecution(id)"
+
+        - name: "WorkflowTransformer"
+          file: "src/services/workflow-transformer.ts"
+          purpose: "Transform simplified DSL ↔ N8N complex JSON"
+          critical_logic:
+            - "Multi-output port handling (If/Switch nodes)"
+            - "Node position calculation"
+            - "Connection generation"
+
+        - name: "SessionStoreFactory"
+          file: "src/services/session-store-factory.ts"
+          purpose: "Create Redis or in-memory session store"
+          options: ["redis", "memory"]
+
+        - name: "RedisSessionStore"
+          file: "src/services/redis-session-store.ts"
+          purpose: "Redis-backed builder session storage"
+          ttl: "30 minutes"
+
+        - name: "KnowledgeRegistry"
+          file: "src/knowledge/core/registry.ts"
+          purpose: "Central access to schemas and quirks"
+          phase: "Phase 3A"
+
+    # ------------------------------------------------------------------------
+    # Layer 4: Knowledge
+    # ------------------------------------------------------------------------
+    - id: "L4"
+      name: "Knowledge"
+      purpose: "Schema definitions, quirks, validation"
+      source: "src/knowledge/"
+      phase: "Phase 3A"
+      components:
+        schemas:
+          location: "src/knowledge/schemas/"
+          nodes:
+            - name: "If-node"
+              file: "if-node.ts"
+              critical: "Dual format (combinator vs legacy_options)"
+
+            - name: "Switch-node"
+              file: "switch-node.ts"
+              critical: "Multi-output routing"
+
+            - name: "Filter-node"
+              file: "filter-node.ts"
+
+        quirks:
+          location: "src/knowledge/quirks/"
+          entries:
+            - name: "If-node dual format"
+              file: "if-node.ts"
+              severity: "critical"
+              symptom: "Workflow works in API but breaks in UI"
+              solution: "Use combinator format only"
+
+        types:
+          location: "src/knowledge/types.ts"
+          exports:
+            - "NodeSchema"
+            - "QuirkEntry"
+            - "ValidationResult"
+
+    # ------------------------------------------------------------------------
+    # Layer 5: Types
+    # ------------------------------------------------------------------------
+    - id: "L5"
+      name: "Types"
+      purpose: "Shared TypeScript interfaces"
+      source: "src/types/"
+      components:
+        - name: "SimplifiedWorkflow"
+          file: "src/services/builder-types.ts"
+          purpose: "AI-friendly workflow DSL"
+
+        - name: "N8NWorkflow"
+          file: "src/types/n8n.ts"
+          purpose: "N8N API response types"
+
+        - name: "BuilderSession"
+          file: "src/services/builder-types.ts"
+          purpose: "Builder session state"
+
+    # ------------------------------------------------------------------------
+    # Layer 6: Config
+    # ------------------------------------------------------------------------
+    - id: "L6"
+      name: "Config"
+      purpose: "Environment configuration"
+      source: "src/config.ts"
+      variables:
+        required:
+          - name: "N8N_API_URL"
+            example: "https://n8n.example.com/api/v1"
+
+          - name: "N8N_API_KEY"
+            example: "eyJ..."
+
+          - name: "MCP_API_KEY"
+            example: "mcp_xxx"
+
+        optional:
+          - name: "REDIS_URL"
+            default: "redis://localhost:6379"
+            purpose: "Builder session storage"
+
+          - name: "PORT"
+            default: "3302"
+
+          - name: "SESSION_TTL_MINUTES"
+            default: "30"
+
+# ============================================================================
+# DATA FLOWS
+# ============================================================================
+data_flows:
+  # --------------------------------------------------------------------------
+  # Flow 1: Workflow Creation (Direct)
+  # --------------------------------------------------------------------------
+  workflow_create:
+    trigger: "AI agent calls workflow_create"
+    diagram: |
+      ┌──────────┐     ┌──────────────┐     ┌────────────────────┐     ┌─────────┐
+      │ AI Agent │ ──► │ workflow_    │ ──► │ WorkflowTransformer│ ──► │ N8NClient│
+      │          │     │ create tool  │     │                    │     │         │
+      └──────────┘     └──────────────┘     └────────────────────┘     └────┬────┘
+                                                                             │
+                                                                             ▼
+      ┌──────────┐     ┌──────────────┐     ┌────────────────────┐     ┌─────────┐
+      │ Response │ ◄── │ tool returns │ ◄── │ created workflow   │ ◄── │ N8N API │
+      └──────────┘     └──────────────┘     └────────────────────┘     └─────────┘
+
+    steps:
+      - step: 1
+        action: "AI sends simplified workflow DSL"
+        data: "{ name, steps: [...], connections: [...] }"
+
+      - step: 2
+        action: "WorkflowTransformer converts to N8N format"
+        logic: "Map node types, calculate positions, generate connections"
+
+      - step: 3
+        action: "N8NClient.createWorkflow() calls N8N API"
+        method: "POST /workflows"
+
+      - step: 4
+        action: "Return created workflow ID and details"
+
+  # --------------------------------------------------------------------------
+  # Flow 2: Builder Pattern (Session-based)
+  # --------------------------------------------------------------------------
+  builder_workflow:
+    trigger: "AI agent wants step-by-step workflow building"
+    diagram: |
+      ┌──────────┐     ┌──────────────┐     ┌─────────────┐
+      │ AI Agent │ ──► │ builder_     │ ──► │   Redis     │
+      │          │     │ start        │     │  (session)  │
+      └──────────┘     └──────────────┘     └──────┬──────┘
+                                                   │
+      ┌──────────┐     ┌──────────────┐           │
+      │ AI Agent │ ──► │ builder_     │ ◄─────────┘
+      │          │     │ add_node     │ ────┐
+      └──────────┘     └──────────────┘     │
+                                            ▼
+                                    ┌─────────────────┐
+                                    │ Knowledge Layer │
+                                    │  (validation)   │
+                                    └─────────────────┘
+                                            │
+      ┌──────────┐     ┌──────────────┐     │
+      │ AI Agent │ ──► │ builder_     │ ◄───┘
+      │          │     │ preview      │ ──► validation warnings
+      └──────────┘     └──────────────┘
+
+      ┌──────────┐     ┌──────────────┐     ┌─────────┐
+      │ AI Agent │ ──► │ builder_     │ ──► │ N8N API │
+      │          │     │ commit       │     │         │
+      └──────────┘     └──────────────┘     └─────────┘
+
+    steps:
+      - step: 1
+        action: "builder_start creates session in Redis"
+        data: "{ sessionId, name, credentials }"
+        ttl: "30 minutes"
+
+      - step: 2
+        action: "builder_add_node adds nodes to draft"
+        validation: "Knowledge layer checks schema, detects quirks"
+
+      - step: 3
+        action: "builder_connect links nodes"
+
+      - step: 4
+        action: "builder_preview shows draft with warnings"
+        validation: "Full validation, quirk detection"
+
+      - step: 5
+        action: "builder_commit transforms and creates in N8N"
+        cleanup: "Session removed from Redis"
+
+  # --------------------------------------------------------------------------
+  # Flow 3: Knowledge Lookup
+  # --------------------------------------------------------------------------
+  knowledge_lookup:
+    trigger: "AI needs schema information or quirk check"
+    diagram: |
+      ┌──────────┐     ┌──────────────┐     ┌─────────────────┐
+      │ AI Agent │ ──► │ schema_get   │ ──► │ KnowledgeRegistry│
+      │          │     │              │     │                 │
+      └──────────┘     └──────────────┘     └────────┬────────┘
+                                                     │
+                                            ┌────────┴────────┐
+                                            │                 │
+                                            ▼                 ▼
+                                    ┌─────────────┐   ┌─────────────┐
+                                    │   Code      │   │   Redis     │
+                                    │  Schemas    │   │ (future ext)│
+                                    └─────────────┘   └─────────────┘
+
+    steps:
+      - step: 1
+        action: "AI calls schema_get('If')"
+
+      - step: 2
+        action: "KnowledgeRegistry looks up in code-based schemas"
+
+      - step: 3
+        action: "Returns schema with format requirements, examples"
+
+      - step: 4
+        action: "AI uses schema to build valid node configuration"
+
+# ============================================================================
+# DEPLOYMENT
+# ============================================================================
+deployment:
+  diagram: |
+    ┌─────────────────────────────────────────────────────────────────────┐
+    │                        PRODUCTION DEPLOYMENT                        │
+    └─────────────────────────────────────────────────────────────────────┘
+
+    Internet
+        │
+        ▼
+    ┌─────────────────┐
+    │  Cloudflare     │     URL: mcp-n8n.strangematic.com
+    │  Tunnel         │     Auth: CF Access Service Token
+    └────────┬────────┘
+             │
+             ▼ (port 3302)
+    ┌─────────────────┐
+    │  Docker         │     Image: strange-mcp-n8n:latest
+    │  Container      │     Network: strange-mcp-network
+    └────────┬────────┘
+             │
+        ┌────┴────┐
+        │         │
+        ▼         ▼
+    ┌───────┐ ┌───────┐
+    │ Redis │ │  N8N  │     N8N: Internal network
+    └───────┘ └───────┘     Redis: Session storage
+
+  components:
+    container:
+      name: "strange-mcp-n8n-server"
+      image: "strange-mcp-n8n:latest"
+      port: 3302
+      network: "strange-mcp-network"
+      health_check: "GET /health"
+
+    cloudflare:
+      tunnel: "strangematic tunnel"
+      url: "https://mcp-n8n.strangematic.com"
+      auth: "CF Access Service Token"
+      valid_until: "2027-01-20"
+
+    redis:
+      purpose: "Builder session storage"
+      connection: "Internal docker network"
+
+    n8n:
+      purpose: "Target automation platform"
+      connection: "Internal docker network"
+      api_version: "v1"
+
+  commands:
+    build: "docker build -t strange-mcp-n8n ."
+    run: "docker compose up -d"
+    logs: "docker logs strange-mcp-n8n-server"
+    health: "curl https://mcp-n8n.strangematic.com/health"
+
+# ============================================================================
+# EVOLUTION PATH
+# ============================================================================
+evolution_path:
+  can_change:
+    - item: "Add more node schemas"
+      when: "New N8N node types need schema support"
+      how: "Add file to src/knowledge/schemas/, register in index"
+
+    - item: "Add more quirks"
+      when: "New N8N API issues discovered"
+      how: "Add to src/knowledge/quirks/"
+
+    - item: "Move schemas to Redis"
+      when: "Hot updates required without restart"
+      how: "Extend KnowledgeRegistry to check Redis first"
+
+    - item: "Add Phase 4A validation layer"
+      when: "After UAT confirms Phase 3A value"
+      how: "Add pre-commit validation gate in builder_commit"
+
+    - item: "Add new MCP tools"
+      when: "New N8N API features need exposure"
+      how: "Add to src/tools/, register in tools-registration.ts"
+
+  should_not_change:
+    - item: "Transport layer (mcp-core)"
+      reason: "Standardized across all MCP servers"
+      impact: "Breaking change affects mcp-postgres too"
+
+    - item: "Simplified workflow DSL structure"
+      reason: "AI agents depend on this format"
+      impact: "Would break existing AI workflows"
+
+    - item: "Builder session pattern"
+      reason: "Core UX pattern for step-by-step building"
+      impact: "Would require significant AI prompt changes"
+
+    - item: "MCP tool naming convention"
+      reason: "AI agents reference tools by name"
+      impact: "Breaking change for all consumers"
+
+# ============================================================================
+# SUCCESS METRICS
+# ============================================================================
+success_metrics:
+  metrics:
+    - metric: "Workflow creation success"
+      before: "Manual N8N UI"
+      after: "AI-driven via MCP"
+      target: ">95% success rate"
+
+    - metric: "Debug time for schema issues"
+      before: "2+ hours"
+      after: "<5 minutes"
+      target: "<5 minutes"
+
+    - metric: "Self-service rate"
+      before: "0%"
+      after: "90%"
+      target: ">80%"
+
+    - metric: "Test coverage"
+      before: "19.11%"
+      after: "41.65%"
+      target: ">60%"
+
+# ============================================================================
+# REFERENCES
+# ============================================================================
+references:
+  decision_ids:
+    - id: "9d64870b-7db5-490e-bf55-a54e130952ca"
+      title: "Gantt Roadmap + Service Blueprint"
+
+    - id: "74c4fa6a-40c9-4fd2-9b9c-04c58c39f40c"
+      title: "Transport Standardization Strategy"
+
+    - id: "03a09981-9694-4a43-906d-32d11247e80e"
+      title: "Phase 3A Knowledge Layer Deployment"
+
+    - id: "9162b4e7-368a-4d5c-b1c7-58f7ec6fa2c9"
+      title: "Platform Evolution Architecture"
+
+  related_docs:
+    - path: "docs/KNOWLEDGE-LAYER-RATIONALE.yaml"
+      purpose: "WHY knowledge layer was designed"
+
+    - path: "docs/MIDDLEWARE-ARCHITECTURE.yaml"
+      purpose: "HOW hybrid middleware works"
+
+    - path: "docs/GANTT-ROADMAP.md"
+      purpose: "Timeline and phases"
+
+    - path: "docs/KNOWLEDGE-LAYER-USAGE.md"
+      purpose: "How to use knowledge tools"
+
+  external:
+    - name: "N8N API Documentation"
+      url: "https://docs.n8n.io/api/"
+
+    - name: "MCP Specification"
+      url: "https://modelcontextprotocol.io/"
+
+    - name: "@strange/mcp-core"
+      path: "/home/strange/projects/strange-mcp-core"

@@ -1,0 +1,326 @@
+# ============================================================================
+# AI-First Documentation Template
+# ============================================================================
+# Purpose: Ensure consistent, machine-readable architectural documentation
+# Audience: AI agents managing MCP ecosystem evolution
+# Created: 2026-01-23
+# Version: 1.0
+# ============================================================================
+
+version: 1.0
+purpose: |
+  Standardize AI-readable documentation format for architectural decisions,
+  enabling AI agents to understand context, rationale, and evolution paths
+  for MCP platform development.
+
+audience:
+  primary: "AI agents (Claude, future LLMs)"
+  secondary: "Human developers for reference"
+
+# ============================================================================
+# METADATA BLOCK (Required for all docs)
+# ============================================================================
+metadata_required:
+  - field: title
+    description: "Document title"
+    example: "Knowledge Layer Design Rationale"
+
+  - field: purpose
+    description: "Why this document exists (1-2 sentences)"
+    example: "Explain WHY knowledge layer architecture was chosen"
+
+  - field: audience
+    description: "Target readers"
+    options: ["AI agents", "humans", "both"]
+
+  - field: last_updated
+    description: "ISO 8601 date"
+    example: "2026-01-23"
+
+  - field: related_decisions
+    description: "Context DB decision IDs for traceability"
+    example: ["9162b4e7-368a-4d5c-b1c7-58f7ec6fa2c9"]
+
+  - field: phase
+    description: "Project phase this relates to"
+    options: ["Foundation", "Phase 3A", "Phase 4A", "Deferred"]
+
+  - field: status
+    description: "Document status"
+    options: ["draft", "active", "superseded"]
+
+# ============================================================================
+# STANDARD SECTIONS
+# ============================================================================
+sections:
+  # --------------------------------------------------------------------------
+  # Section 1: Overview (TL;DR)
+  # --------------------------------------------------------------------------
+  overview:
+    required: true
+    purpose: "Quick context for AI to decide if doc is relevant"
+    format: "100-200 word summary"
+    must_include:
+      - "What this document covers"
+      - "Key takeaway (1 sentence)"
+      - "When to use this information"
+    example: |
+      This document explains the architectural rationale for MCP N8N's
+      Knowledge Layer (Phase 3A). Key decision: Hybrid middleware approach
+      using code-based schemas with Redis extension capability.
+
+      Use this when: Evaluating changes to schema system, adding new node
+      types, or planning Phase 4A validation features.
+
+  # --------------------------------------------------------------------------
+  # Section 2: Decision Context
+  # --------------------------------------------------------------------------
+  decision_context:
+    required: true
+    purpose: "Explain WHAT problem/need drove this design"
+    subsections:
+      problem_statement:
+        format: "Clear description of the problem"
+        max_words: 150
+
+      constraints:
+        format: "table"
+        columns: ["Constraint", "Type", "Impact"]
+        types: ["Technical", "Resource", "Time", "Design"]
+
+      stakeholders:
+        format: "list"
+        include: ["Who is affected", "What they care about"]
+
+    example: |
+      ## Problem Statement
+      If-node dual format bug caused 2h manual debugging. N8N API accepts
+      both combinator and legacy_options format, but UI only renders
+      combinator, causing silent workflow failures.
+
+      ## Constraints
+      | Constraint | Type | Impact |
+      |------------|------|--------|
+      | No N8N schema API | Technical | Must maintain own schema library |
+      | AI-first platform | Design | Must enable self-diagnosis |
+      | Time budget 10-15h | Resource | Must prioritize MVP features |
+
+  # --------------------------------------------------------------------------
+  # Section 3: Options Evaluated
+  # --------------------------------------------------------------------------
+  options_evaluated:
+    required: true
+    purpose: "Show alternatives considered (for AI to understand trade-offs)"
+    format: "structured_options"
+    per_option:
+      - name: "Option name"
+      - approach: "Brief description (1-2 sentences)"
+      - pros: "Bulleted list"
+      - cons: "Bulleted list"
+      - effort: "S/M/L"
+      - risk: "Low/Medium/High"
+
+    comparison_table:
+      required: true
+      format: "markdown table"
+      columns: ["Criteria", "Option A", "Option B", "Option C"]
+
+    example: |
+      ## Option A: Pure Code
+      **Approach:** All schemas and logic in TypeScript
+      **Pros:** Type safety, version control
+      **Cons:** Restart required for updates
+      **Effort:** S | **Risk:** Low
+
+      ## Comparison
+      | Criteria | Pure Code | Pure Redis | Hybrid |
+      |----------|-----------|------------|--------|
+      | Type Safety | ✅ | ❌ | ✅ |
+      | Hot Updates | ❌ | ✅ | ✅ |
+
+  # --------------------------------------------------------------------------
+  # Section 4: Decision Rationale
+  # --------------------------------------------------------------------------
+  decision_rationale:
+    required: true
+    purpose: "Explain WHY chosen option was selected"
+    format: "structured"
+    must_include:
+      - chosen_option: "Name of selected option"
+      - why_chosen: "3-5 key reasons (bulleted)"
+      - why_not_others: "Brief rejection rationale per option"
+      - confidence: "High/Medium/Low with explanation"
+
+    example: |
+      ## Chosen: Hybrid (Code + Redis)
+
+      **Why:**
+      - Code-based schemas ensure type safety and testability
+      - Redis enables runtime knowledge updates
+      - Hybrid allows Phase 3A MVP → Phase 4A extension path
+
+      **Why NOT Pure Code:** No hot updates
+      **Why NOT Pure Redis:** No type safety
+
+      **Confidence:** High - Proven pattern in production
+
+  # --------------------------------------------------------------------------
+  # Section 5: Trade-offs Accepted
+  # --------------------------------------------------------------------------
+  trade_offs_accepted:
+    required: true
+    purpose: "Document what we gained vs sacrificed"
+    format: "table"
+    columns: ["We Gained", "We Sacrificed", "Mitigation"]
+
+    example: |
+      | We Gained | We Sacrificed | Mitigation |
+      |-----------|---------------|------------|
+      | Type safety | Hot schema updates | Redis for extended knowledge |
+      | Testability | Flexibility | Extension points in code |
+      | Simple MVP | Full feature set | Phase 4A adds features |
+
+  # --------------------------------------------------------------------------
+  # Section 6: Implementation Summary
+  # --------------------------------------------------------------------------
+  implementation_summary:
+    required: false
+    note: "Skip for planning docs, include for completed features"
+    purpose: "High-level HOW (not detailed code)"
+    must_include:
+      - architecture_diagram: "ASCII or mermaid"
+      - key_components: "List with 1-line descriptions"
+      - file_locations: "Key file paths"
+
+    example: |
+      ## Architecture
+      ```
+      ┌─────────────┐     ┌─────────────┐
+      │ TypeScript  │ ←── │   Redis     │
+      │  Schemas    │     │  Extended   │
+      └─────────────┘     └─────────────┘
+      ```
+
+      ## Key Components
+      - KnowledgeRegistry: Central schema access
+      - NodeSchema: Type definitions
+      - QuirkEntry: Known issues
+
+  # --------------------------------------------------------------------------
+  # Section 7: Evolution Path
+  # --------------------------------------------------------------------------
+  evolution_path:
+    required: true
+    purpose: "Document what can/should change later"
+    subsections:
+      can_change:
+        format: "list"
+        include: ["What", "When (trigger condition)"]
+
+      should_not_change:
+        format: "list"
+        include: ["Core principle/constraint", "Why"]
+
+    example: |
+      ## What Can Change Later
+      - Add more node schemas (when new node types needed)
+      - Move schemas to Redis (when hot updates required)
+      - Add auto-fix capability (Phase 4A)
+
+      ## What Should NOT Change
+      - TypeScript type definitions (ensures type safety)
+      - Schema validation interface (breaking change)
+      - Quirk registry structure (affects consumers)
+
+  # --------------------------------------------------------------------------
+  # Section 8: Success Metrics
+  # --------------------------------------------------------------------------
+  success_metrics:
+    required: true
+    purpose: "How to know if decision was good"
+    format: "table"
+    columns: ["Metric", "Before", "After", "Target"]
+
+    example: |
+      | Metric | Before | After | Target |
+      |--------|--------|-------|--------|
+      | Debug time | 2h | <5min | <5min |
+      | Self-service rate | 0% | 90% | >80% |
+      | Schema coverage | 0 | 3 | 3+ |
+
+  # --------------------------------------------------------------------------
+  # Section 9: References
+  # --------------------------------------------------------------------------
+  references:
+    required: true
+    purpose: "Traceability and related documentation"
+    must_include:
+      - decision_ids: "Context DB decision IDs"
+      - related_docs: "Links to related documentation"
+      - external_refs: "External resources if any"
+
+    example: |
+      ## References
+      - Decision: 9162b4e7-368a-4d5c-b1c7-58f7ec6fa2c9
+      - Related: SERVICE-BLUEPRINT.yaml
+      - External: N8N API docs (https://docs.n8n.io/api/)
+
+# ============================================================================
+# VISUAL REQUIREMENTS
+# ============================================================================
+visuals:
+  diagrams:
+    format: "ASCII art or mermaid"
+    when: "Architecture, data flow, component relationships"
+
+  tables:
+    format: "Markdown tables"
+    when: "All comparisons MUST be tables, not prose"
+
+  structure:
+    format: "Use headers (##, ###), not walls of text"
+    rationale: "Machine-parseable structure for AI consumption"
+
+# ============================================================================
+# USAGE GUIDE
+# ============================================================================
+usage:
+  creating_new_doc:
+    steps:
+      - "Copy this template structure"
+      - "Fill metadata section first"
+      - "Complete required sections in order"
+      - "Add optional sections as needed"
+      - "Validate: Can AI understand decision without external context?"
+
+  updating_existing:
+    steps:
+      - "Update last_updated in metadata"
+      - "Mark previous version as superseded if major change"
+      - "Update evolution_path if direction changed"
+
+  validation:
+    test: |
+      Ask AI: "Based on this document, should we [make decision X]?"
+      Pass: AI cites specific sections to support reasoning
+      Fail: AI makes recommendation without document context
+
+# ============================================================================
+# ANTI-PATTERNS
+# ============================================================================
+anti_patterns:
+  - pattern: "Walls of prose"
+    problem: "Hard for AI to parse and extract"
+    fix: "Use structured sections, tables, bullets"
+
+  - pattern: "Missing rationale"
+    problem: "AI can't evaluate if decision still valid"
+    fix: "Always include decision_rationale section"
+
+  - pattern: "No evolution path"
+    problem: "AI can't know what's safe to change"
+    fix: "Always document can_change and should_not_change"
+
+  - pattern: "Missing constraints"
+    problem: "AI may suggest impossible alternatives"
+    fix: "Document all constraints with impact"
