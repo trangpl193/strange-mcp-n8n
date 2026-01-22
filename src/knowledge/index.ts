@@ -35,3 +35,24 @@ export { filterNodeSchema } from './schemas/filter-node.js';
 
 // Quirks
 export { ifNodeQuirks, ifNodeDualFormatQuirk } from './quirks/if-node.js';
+
+// MCP Tools
+export {
+  schema_get,
+  schema_list,
+  quirks_check,
+  quirks_search,
+  schema_validate,
+} from './tools.js';
+
+// MCP Tool Definitions
+export { knowledgeLayerTools } from './mcp-tool-definitions.js';
+
+// MCP Tool Handlers
+export {
+  handleSchemaGet,
+  handleSchemaList,
+  handleQuirksCheck,
+  handleQuirksSearch,
+  handleSchemaValidate,
+} from './mcp-tool-handlers.js';

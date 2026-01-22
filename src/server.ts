@@ -20,6 +20,15 @@ import {
   type ExecutionListInput,
   type ExecutionDebugInput,
 } from './tools/index.js';
+import { knowledgeLayerTools } from './knowledge/index.js';
+import {
+  handleSchemaGet,
+  handleSchemaList,
+  handleQuirksCheck,
+  handleQuirksSearch,
+  handleSchemaValidate,
+} from './knowledge/index.js';
+import { initializeCoreSchemas } from './knowledge/index.js';
 
 /**
  * MCP Server for N8N
@@ -52,6 +61,11 @@ export class N8NMCPServer {
       }
     );
 
+    // Initialize knowledge layer
+    initializeCoreSchemas().catch((err) => {
+      console.error('Failed to initialize knowledge layer:', err);
+    });
+
     this.setupHandlers();
   }
 
@@ -59,6 +73,7 @@ export class N8NMCPServer {
     // List available tools
     this.server.setRequestHandler(ListToolsRequestSchema, async () => ({
       tools: [
+        // Workflow tools
         {
           name: 'workflow_list',
           description: 'List N8N workflows with filtering. Returns workflow summaries with metadata.',
@@ -265,6 +280,8 @@ export class N8NMCPServer {
             required: ['execution_id'],
           },
         },
+        // Knowledge layer tools
+        ...knowledgeLayerTools,
       ],
     }));
 
@@ -397,6 +414,71 @@ export class N8NMCPServer {
             const rawArgs = args as unknown as { executionId: string };
             const input: ExecutionDebugInput = { execution_id: rawArgs.executionId };
             const result = await executionDebug(this.client, input);
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(result, null, 2),
+                },
+              ],
+            };
+          }
+
+          // Knowledge layer tools
+          case 'schema_get': {
+            const result = await handleSchemaGet(args as { nodeType: string; typeVersion?: number });
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(result, null, 2),
+                },
+              ],
+            };
+          }
+
+          case 'schema_list': {
+            const result = await handleSchemaList(args as { status?: 'recommended' | 'deprecated' | 'experimental' });
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(result, null, 2),
+                },
+              ],
+            };
+          }
+
+          case 'quirks_check': {
+            const result = await handleQuirksCheck(args as { nodeType: string; typeVersion?: number });
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(result, null, 2),
+                },
+              ],
+            };
+          }
+
+          case 'quirks_search': {
+            const result = await handleQuirksSearch(args as { symptoms: string[] });
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(result, null, 2),
+                },
+              ],
+            };
+          }
+
+          case 'schema_validate': {
+            const result = await handleSchemaValidate(args as {
+              nodeType: string;
+              parameters: Record<string, unknown>;
+              typeVersion?: number;
+            });
             return {
               content: [
                 {
