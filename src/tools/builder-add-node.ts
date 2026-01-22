@@ -15,6 +15,8 @@ import type {
   DraftNode,
 } from '../services/builder-types.js';
 import { BUILDER_CONSTANTS } from '../services/builder-types.js';
+import { applyNodeDefaults } from '../schema/index.js';
+import { schema_validate, quirks_check } from '../knowledge/index.js';
 
 export async function builderAddNode(
   input: BuilderAddNodeInput
@@ -89,6 +91,41 @@ export async function builderAddNode(
     credential: input.node.credential,
   };
 
+  // Phase 3A Week 3: Validate parameters against knowledge layer schemas
+  let validationInfo: BuilderAddNodeOutput['validation'];
+  try {
+    const validationResult = await schema_validate(input.node.type, parameters);
+    const quirks = await quirks_check(input.node.type);
+
+    if (validationResult.warnings.length > 0 || quirks.length > 0) {
+      const warnings: string[] = [];
+      const quirkMessages: string[] = [];
+
+      validationResult.warnings.forEach((w) => {
+        warnings.push(w.message);
+      });
+
+      quirks.forEach((q) => {
+        if (q.severity === 'critical') {
+          quirkMessages.push(`[CRITICAL] ${q.title}: ${q.workaround}`);
+        } else if (q.severity === 'warning') {
+          quirkMessages.push(`[WARNING] ${q.title}: ${q.workaround}`);
+        }
+      });
+
+      if (warnings.length > 0 || quirkMessages.length > 0) {
+        validationInfo = {
+          has_warnings: true,
+          warnings,
+          quirks: quirkMessages,
+        };
+      }
+    }
+  } catch (error) {
+    // Schema not found or validation error - non-blocking for builder
+    // Nodes without knowledge layer schemas can still be added
+  }
+
   // Add to draft
   session.workflow_draft.nodes.push(draftNode);
 
@@ -108,7 +145,7 @@ export async function builderAddNode(
 
   const nodesCount = session.workflow_draft.nodes.length;
 
-  return {
+  const result: BuilderAddNodeOutput = {
     success: true,
     node_id: nodeId,
     node_name: nodeName,
@@ -117,6 +154,13 @@ export async function builderAddNode(
       ? 'First node added. Add more nodes or call builder_connect to link them.'
       : `${nodesCount} nodes in draft. Call builder_connect to link them, or builder_commit when ready.`,
   };
+
+  // Add validation info if present
+  if (validationInfo) {
+    result.validation = validationInfo;
+  }
+
+  return result;
 }
 
 /**
@@ -143,7 +187,7 @@ function buildParameters(
   config: Record<string, unknown>
 ): Record<string, unknown> {
   // Base parameters from config
-  const params: Record<string, unknown> = { ...config };
+  let params: Record<string, unknown> = { ...config };
 
   // Type-specific parameter mapping
   switch (type) {
@@ -194,6 +238,9 @@ function buildParameters(
       if (config.body) params.responseBody = config.body;
       break;
   }
+
+  // Apply node-specific schema defaults (e.g., If node requires 'options' object)
+  params = applyNodeDefaults(type, params);
 
   return params;
 }
