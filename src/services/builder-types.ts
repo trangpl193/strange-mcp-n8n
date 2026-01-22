@@ -99,6 +99,11 @@ export interface BuilderAddNodeOutput {
   node_name: string;
   nodes_count: number;
   hint: string;
+  validation?: {
+    has_warnings: boolean;
+    warnings: string[];
+    quirks: string[];
+  };
 }
 
 // builder_connect
