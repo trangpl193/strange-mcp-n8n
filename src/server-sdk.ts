@@ -1,19 +1,17 @@
 /**
- * MCP N8N Server using Official SDK
+ * MCP N8N Server using @strange/mcp-core transport
  *
- * This server uses @modelcontextprotocol/sdk for transport layer
- * while keeping custom tool implementations.
+ * Migrated to use standardized transport layer from mcp-core v1.2.0.
+ * Eliminates ~100 lines of transport boilerplate code.
  *
- * Created: 2026-01-20
- * Reason: Claude Code CLI requires Streamable HTTP protocol
+ * Original: 2026-01-20 (direct SDK usage)
+ * Refactored: 2026-01-23 (mcp-core factory pattern)
+ * See: /home/strange/.claude/briefs/mcp-platform-dependencies-2026-01-23.md
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import express, { Request, Response } from 'express';
-import { randomUUID } from 'crypto';
 import { z } from 'zod';
-import { createApiKeyMiddleware, SessionCleanup } from '@strange/mcp-core';
+import { createStreamableHttpServer } from '@strange/mcp-core';
 import { N8NClient } from './services/index.js';
 import { initSessionStore, getSessionStoreType } from './services/session-store-factory.js';
 import { initializeSchemas, detectAPI } from './schema/index.js';
@@ -52,21 +50,8 @@ export interface N8NMcpServerConfig {
   timeout?: number;
   httpPort?: number;
   httpHost?: string;
-}
-
-// Transport session storage
-const transports: Record<string, StreamableHTTPServerTransport> = {};
-
-/**
- * Check if request is an initialize request
- */
-function isInitializeRequest(body: unknown): boolean {
-  return (
-    typeof body === 'object' &&
-    body !== null &&
-    'method' in body &&
-    (body as { method: string }).method === 'initialize'
-  );
+  sessionTimeout?: number;
+  cleanupInterval?: number;
 }
 
 /**
@@ -720,7 +705,7 @@ function createMcpServer(client: N8NClient): McpServer {
         'Use before committing workflows to prevent rendering issues.',
       inputSchema: {
         nodeType: z.string().describe('Simplified node type identifier'),
-        parameters: z.record(z.any()).describe('Node parameters to validate (JSON object)'),
+        parameters: z.record(z.string(), z.any()).describe('Node parameters to validate (JSON object)'),
         typeVersion: z.number().optional().describe('Node type version number (optional)'),
       },
     },
@@ -736,15 +721,15 @@ function createMcpServer(client: N8NClient): McpServer {
 }
 
 /**
- * Start HTTP server with StreamableHTTP transport
+ * Start MCP N8N Server using @strange/mcp-core transport
+ *
+ * Migrated to use standardized transport layer from mcp-core v1.2.0.
+ * Eliminates ~100 lines of transport boilerplate code.
+ *
+ * Refactored: 2026-01-23
+ * See: /home/strange/.claude/briefs/mcp-platform-dependencies-2026-01-23.md
  */
 export async function startServer(config: N8NMcpServerConfig): Promise<void> {
-  const app = express();
-  app.use(express.json());
-
-  const httpPort = config.httpPort || 3302;
-  const httpHost = config.httpHost || '0.0.0.0';
-
   // Initialize canonical schema system (Phase 3)
   initializeSchemas();
   console.log(`🎯 Target API detected: ${detectAPI()}`);
@@ -760,103 +745,25 @@ export async function startServer(config: N8NMcpServerConfig): Promise<void> {
     timeout: config.timeout || 30000,
   });
 
-  // Health check endpoint
-  app.get('/health', (_req: Request, res: Response) => {
-    res.json({
-      status: 'healthy',
-      service: 'strange-mcp-n8n',
+  console.log(`🎯 N8N URL: ${config.n8nUrl}`);
+
+  // Use standardized transport from mcp-core
+  await createStreamableHttpServer({
+    serverInfo: {
+      name: 'strange-mcp-n8n',
       version: '1.2.0',
-      transport: 'streamable-http',
-      timestamp: new Date().toISOString(),
-    });
-  });
-
-  // Session cleanup manager
-  const sessionCleanup = new SessionCleanup({
-    sessionTimeoutMs: 30 * 60 * 1000, // 30 minutes
-    cleanupIntervalMs: 5 * 60 * 1000,  // 5 minutes
-    onSessionCleanup: (sessionId) => {
-      if (transports[sessionId]) {
-        console.log(`🗑️  Cleaned up stale session: ${sessionId}`);
-        delete transports[sessionId];
-      }
     },
-  });
-
-  // API key authentication middleware (from mcp-core)
-  const authenticate = createApiKeyMiddleware({ apiKey: config.mcpApiKey });
-
-  // MCP endpoint
-  app.post('/mcp', authenticate as any, async (req: Request, res: Response) => {
-    const sessionId = req.headers['mcp-session-id'] as string | undefined;
-
-    try {
-      let transport: StreamableHTTPServerTransport;
-
-      if (sessionId && transports[sessionId]) {
-        // Reuse existing transport - update activity
-        transport = transports[sessionId];
-        sessionCleanup.updateActivity(sessionId);
-      } else if (!sessionId && isInitializeRequest(req.body)) {
-        // New session initialization
-        transport = new StreamableHTTPServerTransport({
-          sessionIdGenerator: () => randomUUID(),
-          onsessioninitialized: (newSessionId) => {
-            console.log(`✅ Session initialized: ${newSessionId}`);
-            transports[newSessionId] = transport;
-            sessionCleanup.registerSession(newSessionId);
-          },
-        });
-
-        // Cleanup on close
-        transport.onclose = () => {
-          const sid = transport.sessionId;
-          if (sid && transports[sid]) {
-            console.log(`❌ Session closed: ${sid}`);
-            sessionCleanup.removeSession(sid);
-            delete transports[sid];
-          }
-        };
-
-        // Connect MCP server to transport
-        const server = createMcpServer(client);
-        await server.connect(transport);
-
-        // Handle this request
-        await transport.handleRequest(req, res, req.body);
-        return;
-      } else {
-        // Invalid request
-        res.status(400).json({
-          jsonrpc: '2.0',
-          error: { code: -32000, message: 'Bad Request: No valid session ID provided' },
-          id: null,
-        });
-        return;
-      }
-
-      // Handle request with existing transport
-      await transport.handleRequest(req, res, req.body);
-    } catch (error) {
-      console.error('❌ MCP request error:', error);
-      if (!res.headersSent) {
-        res.status(500).json({
-          jsonrpc: '2.0',
-          error: { code: -32603, message: 'Internal server error' },
-          id: null,
-        });
-      }
-    }
-  });
-
-  // Start server
-  return new Promise((resolve) => {
-    app.listen(httpPort, httpHost, () => {
-      console.log(`🚀 MCP N8N Server listening on http://${httpHost}:${httpPort}/mcp`);
-      console.log(`📊 Health check: http://${httpHost}:${httpPort}/health`);
-      console.log(`🔑 API Key authentication enabled`);
-      console.log(`🎯 N8N URL: ${config.n8nUrl}`);
-      resolve();
-    });
+    serverFactory: () => createMcpServer(client),
+    apiKey: config.mcpApiKey,
+    httpPort: config.httpPort ?? 3302,
+    httpHost: config.httpHost ?? '0.0.0.0',
+    sessionTimeout: config.sessionTimeout,
+    cleanupInterval: config.cleanupInterval,
+    onSessionInitialized: (sessionId: string) => {
+      console.log(`📊 N8N session active: ${sessionId}`);
+    },
+    onSessionClosed: (sessionId: string) => {
+      console.log(`📊 N8N session ended: ${sessionId}`);
+    },
   });
 }
