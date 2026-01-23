@@ -35,6 +35,15 @@ import {
   builderList,
 } from './tools/index.js';
 
+// Knowledge Layer (Phase 3A)
+import {
+  handleSchemaGet,
+  handleSchemaList,
+  handleQuirksCheck,
+  handleQuirksSearch,
+  handleSchemaValidate,
+} from './knowledge/mcp-tool-handlers.js';
+
 // Configuration interface
 export interface N8NMcpServerConfig {
   n8nUrl: string;
@@ -609,6 +618,114 @@ function createMcpServer(client: N8NClient): McpServer {
         session_id: args.sessionId as string,
       };
       const result = await builderDiscard(input);
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+      };
+    }
+  );
+
+  // ========================================================================
+  // KNOWLEDGE LAYER TOOLS (Phase 3A)
+  // ========================================================================
+
+  // Tool: schema_get
+  server.registerTool(
+    'schema_get',
+    {
+      description:
+        'Get validated schema information for a specific N8N node type. ' +
+        'Returns all valid parameter formats, compatibility information, and examples. ' +
+        'Use this before creating nodes to understand the correct structure.',
+      inputSchema: {
+        nodeType: z.string().describe('Simplified node type identifier (e.g., "if", "switch", "filter")'),
+        typeVersion: z.number().optional().describe('Node type version number (optional, defaults to 1)'),
+      },
+    },
+    async (args, _extra) => {
+      const result = await handleSchemaGet(args);
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+      };
+    }
+  );
+
+  // Tool: schema_list
+  server.registerTool(
+    'schema_list',
+    {
+      description:
+        'List all available node schemas in the knowledge library. ' +
+        'Useful for discovering what schemas are documented and available.',
+      inputSchema: {
+        status: z.enum(['recommended', 'deprecated', 'experimental']).optional().describe('Filter by format status (optional)'),
+      },
+    },
+    async (args, _extra) => {
+      const result = await handleSchemaList(args);
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+      };
+    }
+  );
+
+  // Tool: quirks_check
+  server.registerTool(
+    'quirks_check',
+    {
+      description:
+        'Check for known API/UI behavior mismatches (quirks) affecting a specific node type. ' +
+        'Returns quirks with severity levels, symptoms, workarounds, and auto-fix availability. ' +
+        'IMPORTANT: Always call this before creating nodes to avoid known issues.',
+      inputSchema: {
+        nodeType: z.string().describe('Simplified node type identifier (e.g., "if", "switch")'),
+        typeVersion: z.number().optional().describe('Node type version number (optional)'),
+      },
+    },
+    async (args, _extra) => {
+      const result = await handleQuirksCheck(args);
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+      };
+    }
+  );
+
+  // Tool: quirks_search
+  server.registerTool(
+    'quirks_search',
+    {
+      description:
+        'Search for quirks by matching error symptoms or keywords. ' +
+        'Useful when diagnosing unknown issues or debugging workflow problems. ' +
+        'Example symptoms: "empty canvas", "could not find", "rendering error"',
+      inputSchema: {
+        symptoms: z.array(z.string()).describe('Array of symptom keywords to search for (e.g., ["empty", "canvas"])'),
+      },
+    },
+    async (args, _extra) => {
+      const result = await handleQuirksSearch(args);
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+      };
+    }
+  );
+
+  // Tool: schema_validate
+  server.registerTool(
+    'schema_validate',
+    {
+      description:
+        'Validate node parameters against known schema formats. ' +
+        'Checks if parameters match any valid format and returns errors/warnings. ' +
+        'Detects deprecated formats and UI-incompatible structures. ' +
+        'Use before committing workflows to prevent rendering issues.',
+      inputSchema: {
+        nodeType: z.string().describe('Simplified node type identifier'),
+        parameters: z.record(z.any()).describe('Node parameters to validate (JSON object)'),
+        typeVersion: z.number().optional().describe('Node type version number (optional)'),
+      },
+    },
+    async (args, _extra) => {
+      const result = await handleSchemaValidate(args);
       return {
         content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
       };

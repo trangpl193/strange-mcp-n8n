@@ -34,12 +34,17 @@ export class WorkflowTransformer {
       nameToId.set(stepName, node.name);
     });
 
+    // Track which steps have been used as connection targets
+    const usedAsTarget = new Set<number>();
+
     // Generate connections
     simplified.steps.forEach((step, index) => {
+      const mapping = getNodeMapping(step.type);
+      const sourceNodeName = nodes[index].name;
+
       if (step.next) {
-        const sourceNodeName = nodes[index].name;
+        // Explicit next connections
         const targets = Array.isArray(step.next) ? step.next : [step.next];
-        const mapping = getNodeMapping(step.type);
 
         // For IF/Switch nodes, each target goes to a separate output port
         if (mapping?.category === 'logic' && (step.type === 'if' || step.type === 'switch')) {
@@ -68,18 +73,53 @@ export class WorkflowTransformer {
             ],
           };
         }
-      } else if (index < simplified.steps.length - 1) {
-        // Auto-connect to next step
-        const sourceNodeName = nodes[index].name;
-        const targetNodeName = nodes[index + 1].name;
 
-        connections[sourceNodeName] = {
-          main: [[{
-            node: targetNodeName,
-            type: 'main' as const,
-            index: 0,
-          }]],
-        };
+        // Mark targets as used
+        targets.forEach(targetName => {
+          const targetIndex = simplified.steps.findIndex(s =>
+            (s.name || `Step ${simplified.steps.indexOf(s) + 1}`) === targetName
+          );
+          if (targetIndex >= 0) {
+            usedAsTarget.add(targetIndex);
+          }
+        });
+      } else if (index < simplified.steps.length - 1) {
+        // Auto-connect logic: Handle branching nodes specially
+        if (mapping?.category === 'logic' && (step.type === 'if' || step.type === 'switch')) {
+          // IF node: Auto-connect next 2 steps to output ports 0 and 1
+          // Switch node: Auto-connect next N steps based on rules count
+          const outputCount = step.type === 'if' ? 2 : (step.config?.rules?.length || 0) + 1;
+          const outputs: Array<Array<{ node: string; type: 'main'; index: number }>> = [];
+
+          for (let outputIndex = 0; outputIndex < outputCount; outputIndex++) {
+            const targetIndex = index + 1 + outputIndex;
+            if (targetIndex < simplified.steps.length && !usedAsTarget.has(targetIndex)) {
+              outputs.push([{
+                node: nodes[targetIndex].name,
+                type: 'main' as const,
+                index: 0,
+              }]);
+              usedAsTarget.add(targetIndex);
+            } else {
+              outputs.push([]); // Empty output if no target available
+            }
+          }
+
+          connections[sourceNodeName] = { main: outputs };
+        } else if (!usedAsTarget.has(index + 1)) {
+          // Regular node: Auto-connect to next step if it hasn't been used
+          const targetNodeName = nodes[index + 1].name;
+
+          connections[sourceNodeName] = {
+            main: [[{
+              node: targetNodeName,
+              type: 'main' as const,
+              index: 0,
+            }]],
+          };
+
+          usedAsTarget.add(index + 1);
+        }
       }
     });
 

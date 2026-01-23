@@ -15,7 +15,7 @@ import type {
   DraftNode,
 } from '../services/builder-types.js';
 import { BUILDER_CONSTANTS } from '../services/builder-types.js';
-import { applyNodeDefaults } from '../schema/index.js';
+// import { applyNodeDefaults } from '../schema/index.js'; // TODO: Implement this function
 import { schema_validate, quirks_check } from '../knowledge/index.js';
 
 export async function builderAddNode(
@@ -240,7 +240,8 @@ function buildParameters(
   }
 
   // Apply node-specific schema defaults (e.g., If node requires 'options' object)
-  params = applyNodeDefaults(type, params);
+  // TODO: Implement applyNodeDefaults function
+  // params = applyNodeDefaults(type, params);
 
   return params;
 }
