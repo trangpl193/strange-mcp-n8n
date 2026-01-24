@@ -145,21 +145,47 @@ export const schemaRegistry = new SchemaRegistry();
  * Import and register individual node schemas here.
  */
 export async function initializeCoreSchemas(): Promise<void> {
-  // Import schemas
+  // Import schemas - Logic nodes
   const { ifNodeSchema } = await import('../schemas/if-node.js');
   const { switchNodeSchema } = await import('../schemas/switch-node.js');
   const { filterNodeSchema } = await import('../schemas/filter-node.js');
 
+  // Import schemas - Trigger nodes
+  const { webhookNodeSchema } = await import('../schemas/webhook-node.js');
+
+  // Import schemas - Integration nodes
+  const { httpRequestNodeSchema } = await import('../schemas/http-request-node.js');
+
+  // Import schemas - Output nodes
+  const { respondNodeSchema } = await import('../schemas/respond-node.js');
+
+  // Import schemas - Data transformation nodes
+  const { codeNodeSchema } = await import('../schemas/code-node.js');
+  const { setNodeSchema } = await import('../schemas/set-node.js');
+
   // Import quirks
   const { ifNodeQuirks } = await import('../quirks/if-node.js');
 
-  // Register schemas
+  // Register schemas - Logic nodes
   schemaRegistry.registerSchema(ifNodeSchema);
   schemaRegistry.registerSchema(switchNodeSchema);
   schemaRegistry.registerSchema(filterNodeSchema);
 
+  // Register schemas - Trigger nodes
+  schemaRegistry.registerSchema(webhookNodeSchema);
+
+  // Register schemas - Integration nodes
+  schemaRegistry.registerSchema(httpRequestNodeSchema);
+
+  // Register schemas - Output nodes
+  schemaRegistry.registerSchema(respondNodeSchema);
+
+  // Register schemas - Data transformation nodes
+  schemaRegistry.registerSchema(codeNodeSchema);
+  schemaRegistry.registerSchema(setNodeSchema);
+
   // Register quirks
   ifNodeQuirks.forEach((quirk) => schemaRegistry.registerQuirk(quirk));
 
-  console.log('✅ Knowledge Layer initialized: 3 schemas, 1 quirk registered');
+  console.log('✅ Knowledge Layer initialized: 8 schemas, 1 quirk registered');
 }

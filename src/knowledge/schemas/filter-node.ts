@@ -164,6 +164,50 @@ export const filterNodeSchema: NodeSchema = {
         'Items matching the conditions are KEPT and passed to next node. ' +
         'Items not matching are REMOVED from the workflow. ' +
         'Use "and" combinator when all conditions must match, "or" when any condition matches.',
+
+      editorRequirements: [
+        {
+          id: 'combinator_field',
+          name: 'Combinator Field Required',
+          path: 'conditions.combinator',
+          checkType: 'exists',
+          expected: { type: 'string' },
+          errorMessage: 'Missing conditions.combinator field',
+          severity: 'error',
+          rationale: 'Combinator defines how filter conditions are logically combined (and/or)',
+          fix: 'Add conditions.combinator: "and" or "or"',
+        },
+        {
+          id: 'conditions_array',
+          name: 'Conditions Array Required',
+          path: 'conditions.conditions',
+          checkType: 'type',
+          expected: { type: 'array', minLength: 1 },
+          errorMessage: 'Missing or empty conditions.conditions array',
+          severity: 'error',
+          rationale: 'Filter node requires at least one condition to filter items',
+          fix: 'Add conditions.conditions: [{ leftValue: ..., rightValue: ..., operator: ... }]',
+        },
+        {
+          id: 'condition_structure',
+          name: 'Condition Structure Valid',
+          path: 'conditions.conditions[]',
+          checkType: 'custom',
+          customValidator: (params: any) => {
+            const conditions = params?.conditions?.conditions || [];
+            return conditions.every((c: any) =>
+              c.leftValue !== undefined &&
+              c.rightValue !== undefined &&
+              c.operator?.type &&
+              c.operator?.operation
+            );
+          },
+          errorMessage: 'Each condition must have leftValue, rightValue, and operator (with type and operation)',
+          severity: 'error',
+          rationale: 'N8N UI requires complete condition structure for rendering',
+          fix: 'Ensure each condition has: { leftValue: "={{ $json.field }}", rightValue: "value", operator: { type: "string", operation: "equals" } }',
+        },
+      ],
     },
   ],
 
