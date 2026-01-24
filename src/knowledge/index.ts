@@ -10,6 +10,7 @@
 // Core types
 export type {
   NodeSchema,
+  SchemaSummary,
   SchemaFormat,
   SchemaMetadata,
   EditorRequirement,

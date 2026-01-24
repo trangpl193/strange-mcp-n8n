@@ -47,6 +47,56 @@ export interface NodeSchema {
 }
 
 /**
+ * Schema Summary - Lightweight version of NodeSchema
+ *
+ * Provides minimal schema information for discovery and listing.
+ * Use this for schema_list() to reduce token usage.
+ * Use schema_get() to retrieve full details when needed.
+ *
+ * @since v1.3.0 (Token Optimization)
+ */
+export interface SchemaSummary {
+  /**
+   * Simplified node type identifier
+   * @example "if", "switch", "filter"
+   */
+  nodeType: string;
+
+  /**
+   * Full N8N node type identifier
+   * @example "n8n-nodes-base.if"
+   */
+  n8nType: string;
+
+  /**
+   * Node type version number
+   */
+  typeVersion: number;
+
+  /**
+   * Names of all available formats
+   * @example ["hybrid", "pure_combinator"]
+   */
+  formatNames: string[];
+
+  /**
+   * Name of the recommended format (if any)
+   * @example "hybrid"
+   */
+  recommendedFormat: string | null;
+
+  /**
+   * Whether this node has known quirks or deprecated formats
+   */
+  hasQuirks: boolean;
+
+  /**
+   * Number of formats available
+   */
+  formatCount: number;
+}
+
+/**
  * Editor Requirement - UI-specific validation rule
  *
  * Documents requirements that N8N UI editor needs to render correctly.

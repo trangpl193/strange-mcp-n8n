@@ -10,6 +10,7 @@
 import { schemaRegistry } from './core/registry.js';
 import type {
   NodeSchema,
+  SchemaSummary,
   Quirk,
   SchemaValidationResult,
   ValidationError,
@@ -56,25 +57,51 @@ export async function schema_get(
 /**
  * schema_list() - List all available node schemas
  *
- * Returns summary of all nodes in the knowledge library.
- * Useful for discovering what schemas are available.
+ * Returns schema information from the knowledge library.
+ * Use summary mode for discovery (lightweight, ~95% token reduction).
+ * Use full mode when you need complete schema details.
  *
- * @param filter - Optional filter criteria
- * @returns Array of NodeSchema objects
+ * @param options - Optional filter and display options
+ * @param options.status - Filter by format status
+ * @param options.summary - Return lightweight summary (default: false)
+ * @returns Array of NodeSchema or SchemaSummary objects
  *
  * @example
  * ```typescript
- * const allSchemas = await schema_list();
- * // Returns: All registered schemas
+ * // Lightweight summary for discovery (RECOMMENDED)
+ * const summary = await schema_list({ summary: true });
+ * // Returns: [{ nodeType: "if", formatNames: ["hybrid", "pure_combinator"], ... }]
+ * // Size: ~170 tokens (vs ~3,170 tokens for full schemas)
  *
- * const recommended = await schema_list({ status: 'recommended' });
- * // Returns: Only schemas with recommended formats
+ * // Full schemas when you need complete details
+ * const allSchemas = await schema_list();
+ * // Returns: Full NodeSchema[] with examples, editorRequirements, etc.
+ *
+ * // Filter by status
+ * const recommended = await schema_list({ status: 'recommended', summary: true });
  * ```
  */
-export async function schema_list(filter?: {
+export async function schema_list(options?: {
   status?: 'recommended' | 'deprecated' | 'experimental';
-}): Promise<NodeSchema[]> {
-  return schemaRegistry.listSchemas(filter);
+  summary?: boolean;
+}): Promise<NodeSchema[] | SchemaSummary[]> {
+  const schemas = schemaRegistry.listSchemas(options);
+
+  // Return lightweight summary if requested (95% token reduction)
+  if (options?.summary) {
+    return schemas.map((s): SchemaSummary => ({
+      nodeType: s.nodeType,
+      n8nType: s.n8nType,
+      typeVersion: s.typeVersion,
+      formatNames: s.formats.map((f) => f.name),
+      recommendedFormat: s.formats.find((f) => f.status === 'recommended')?.name ?? null,
+      hasQuirks: s.formats.some((f) => f.status === 'deprecated'),
+      formatCount: s.formats.length,
+    }));
+  }
+
+  // Return full schemas
+  return schemas;
 }
 
 /**
