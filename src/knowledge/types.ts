@@ -47,6 +47,86 @@ export interface NodeSchema {
 }
 
 /**
+ * Editor Requirement - UI-specific validation rule
+ *
+ * Documents requirements that N8N UI editor needs to render correctly.
+ * Goes beyond API acceptance to ensure UI compatibility.
+ *
+ * @since Tier 2 Enhancement (2026-01-24)
+ */
+export interface EditorRequirement {
+  /**
+   * Unique requirement identifier
+   * @example "conditions_options_wrapper"
+   */
+  id: string;
+
+  /**
+   * Human-readable name
+   * @example "Conditions Options Wrapper Required"
+   */
+  name: string;
+
+  /**
+   * JSON path to check
+   * @example "conditions.options"
+   * @example "conditions.conditions[].id" (for array element checks)
+   */
+  path: string;
+
+  /**
+   * Validation check type
+   * - exists: Check if path exists
+   * - type: Check if value is of expected type
+   * - value: Check if value equals expected value
+   * - custom: Use custom validator function
+   */
+  checkType: 'exists' | 'type' | 'value' | 'custom';
+
+  /**
+   * Expected value or type constraints
+   */
+  expected?: {
+    type?: 'object' | 'array' | 'string' | 'number' | 'boolean';
+    value?: unknown;
+    minLength?: number;
+    pattern?: string;
+  };
+
+  /**
+   * Custom validation function (for complex checks)
+   * Return true if validation passes
+   */
+  customValidator?: (params: Record<string, unknown>) => boolean;
+
+  /**
+   * Error message if validation fails
+   * @example "Missing conditions.options wrapper - required for editor rendering"
+   */
+  errorMessage: string;
+
+  /**
+   * How critical is this requirement?
+   * - error: Will break UI rendering (show as error)
+   * - warning: May cause issues (show as warning)
+   */
+  severity: 'error' | 'warning';
+
+  /**
+   * Why is this required?
+   * Technical explanation of why N8N UI needs this
+   * @example "N8N UI editor uses options wrapper to store condition state"
+   */
+  rationale: string;
+
+  /**
+   * How to fix if failing
+   * @example "Add conditions.options: { caseSensitive: true, leftValue: '', typeValidation: 'strict' }"
+   */
+  fix?: string;
+}
+
+/**
  * Schema Format - Specific parameter structure variant
  *
  * N8N nodes can have multiple valid parameter formats (e.g., If-node has
@@ -107,6 +187,13 @@ export interface SchemaFormat {
    * @example "This is the format used by N8N UI. Always prefer this."
    */
   notes?: string;
+
+  /**
+   * Editor-specific validation rules
+   * Documents UI requirements beyond basic format matching
+   * @since Tier 2 Enhancement (2026-01-24)
+   */
+  editorRequirements?: EditorRequirement[];
 }
 
 /**
@@ -446,6 +533,8 @@ export interface ValidationWarning {
 export interface SchemaValidationResult {
   /**
    * Is the configuration valid?
+   * True only if format matches AND editor requirements pass
+   * @since Tier 2: Changed to require both format AND editor validation
    */
   valid: boolean;
 
@@ -469,6 +558,20 @@ export interface SchemaValidationResult {
    * How to fix if invalid
    */
   suggestion?: string;
+
+  /**
+   * Will N8N UI editor render this correctly?
+   * True if all editor requirements pass (or no requirements defined)
+   * @since Tier 2 Enhancement (2026-01-24)
+   */
+  editorCompatible: boolean;
+
+  /**
+   * Editor requirements that failed validation
+   * Only present if editorCompatible is false
+   * @since Tier 2 Enhancement (2026-01-24)
+   */
+  editorIssues?: EditorRequirement[];
 }
 
 /**

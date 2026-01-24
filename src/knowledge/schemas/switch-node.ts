@@ -203,6 +203,42 @@ export const switchNodeSchema: NodeSchema = {
         'Each rule has conditions similar to If-node combinator format. ' +
         'Items matching rule 1 go to output 0, rule 2 to output 1, etc. ' +
         'Items matching no rules go to fallbackOutput.',
+
+      editorRequirements: [
+        {
+          id: 'rules_values_array',
+          name: 'Rules Values Array',
+          path: 'rules.values',
+          checkType: 'exists',
+          expected: { type: 'array', minLength: 1 },
+          errorMessage: 'Missing rules.values array - required for rules mode',
+          severity: 'error',
+          rationale: 'Switch rules mode requires rules.values array structure (not direct rules array)',
+          fix: 'Use rules: { values: [...] } instead of rules: [...]',
+        },
+        {
+          id: 'rules_mode_set',
+          name: 'Rules Mode Set',
+          path: 'mode',
+          checkType: 'value',
+          expected: { value: 'rules' },
+          errorMessage: 'mode must be set to "rules" for rules-based routing',
+          severity: 'error',
+          rationale: 'Switch node requires explicit mode declaration to differentiate between rules and expression modes',
+          fix: 'Add mode: "rules" to parameters',
+        },
+        {
+          id: 'fallback_output',
+          name: 'Fallback Output Configured',
+          path: 'fallbackOutput',
+          checkType: 'exists',
+          expected: { type: 'number' },
+          errorMessage: 'Missing fallbackOutput configuration',
+          severity: 'warning',
+          rationale: 'Items matching no rules need fallback routing to avoid dropped data',
+          fix: 'Add fallbackOutput: <output_index> (usually rules.values.length for last output)',
+        },
+      ],
     },
 
     {

@@ -1,19 +1,21 @@
 /**
  * If Node Schema Definition
  *
- * Validated schema for N8N If-node (n8n-nodes-base.if) typeVersion 1.
+ * Validated schema for N8N If-node (n8n-nodes-base.if) typeVersion 2.
  *
- * CRITICAL DISCOVERY (2026-01-22 UAT):
- * If-node has TWO incompatible parameter formats:
- * 1. "combinator" format - UI-compatible, RECOMMENDED
- * 2. "legacy_options" format - API accepts but UI breaks
+ * CRITICAL DISCOVERY (2026-01-23 UAT):
+ * If-node requires HYBRID format for UI rendering:
+ * - typeVersion: 2 (not 1)
+ * - conditions.options wrapper (caseSensitive, leftValue, typeValidation)
+ * - conditions.conditions[].id (unique ID for each condition)
+ * - conditions.combinator ('and' | 'or')
+ * - parameters.options: {} at root level
  *
  * Evidence:
- * - Workflow p0wuASUdgvHj9jxj (UI-created): Uses combinator, renders correctly
- * - Workflow gCHR2BIIyF4CLnOs (Builder-created): Used legacy format, empty canvas
+ * - Workflow sPB8ybdrJbCVjF6M (UI-created "Test IF Branching v1.3.0"): Uses HYBRID, renders correctly
+ * - Workflow IDuDIn6U7M4tUzOr (Builder-created "UAT Simple Test"): Used pure combinator, empty canvas
  *
- * @see /home/strange/projects/strange-mcp-n8n/UAT-RESULTS-2026-01-22.md
- * @see /home/strange/projects/strange-mcp-n8n/src/schema/node-defaults/if-node.ts
+ * Reference: /home/strange/projects/strange-mcp-n8n/src/knowledge/references/if-node/ui-created-reference.json
  */
 
 import type { NodeSchema } from '../types.js';
@@ -21,16 +23,16 @@ import type { NodeSchema } from '../types.js';
 /**
  * If Node Complete Schema
  *
- * Documents both combinator (recommended) and legacy_options (deprecated) formats.
+ * Documents the HYBRID format (recommended) and pure_combinator (broken) formats.
  */
 export const ifNodeSchema: NodeSchema = {
   nodeType: 'if',
   n8nType: 'n8n-nodes-base.if',
-  typeVersion: 1,
+  typeVersion: 2, // CRITICAL: Must be 2, not 1
 
   formats: [
     {
-      name: 'combinator',
+      name: 'hybrid',
       status: 'recommended',
       uiCompatible: true,
       apiCompatible: true,
@@ -40,20 +42,42 @@ export const ifNodeSchema: NodeSchema = {
           type: 'object',
           required: true,
           properties: {
-            combinator: {
-              type: 'string',
-              enum: ['and', 'or'],
+            options: {
+              type: 'object',
               required: true,
-              description: 'Logical operator combining conditions',
+              description: 'REQUIRED wrapper for UI rendering',
+              properties: {
+                caseSensitive: {
+                  type: 'boolean',
+                  default: true,
+                  description: 'Case-sensitive string comparison',
+                },
+                leftValue: {
+                  type: 'string',
+                  default: '',
+                  description: 'Base path for left values (usually empty)',
+                },
+                typeValidation: {
+                  type: 'string',
+                  enum: ['strict', 'loose'],
+                  default: 'strict',
+                  description: 'Type validation mode',
+                },
+              },
             },
             conditions: {
               type: 'array',
               required: true,
               minItems: 1,
-              description: 'Array of condition objects',
+              description: 'Array of condition objects with unique IDs',
               items: {
                 type: 'object',
                 properties: {
+                  id: {
+                    type: 'string',
+                    required: true,
+                    description: 'REQUIRED unique identifier (e.g., "condition1", uuid)',
+                  },
                   leftValue: {
                     type: 'string',
                     required: true,
@@ -97,6 +121,172 @@ export const ifNodeSchema: NodeSchema = {
                 },
               },
             },
+            combinator: {
+              type: 'string',
+              enum: ['and', 'or'],
+              required: true,
+              description: 'Logical operator combining conditions',
+            },
+          },
+        },
+        options: {
+          type: 'object',
+          required: true,
+          description: 'REQUIRED empty object at parameters root level',
+          default: {},
+        },
+      },
+
+      example: {
+        minimal: {
+          conditions: {
+            options: {
+              caseSensitive: true,
+              leftValue: '',
+              typeValidation: 'strict',
+            },
+            conditions: [
+              {
+                id: 'condition1',
+                leftValue: '={{ $json.status }}',
+                rightValue: 'success',
+                operator: {
+                  type: 'string',
+                  operation: 'equals',
+                },
+              },
+            ],
+            combinator: 'and',
+          },
+          options: {},
+        },
+
+        complete: {
+          conditions: {
+            options: {
+              caseSensitive: true,
+              leftValue: '',
+              typeValidation: 'strict',
+            },
+            conditions: [
+              {
+                id: 'condition1',
+                leftValue: '={{ $json.price }}',
+                rightValue: '200',
+                operator: {
+                  type: 'number',
+                  operation: 'lt',
+                },
+              },
+              {
+                id: 'condition2',
+                leftValue: '={{ $json.urgent }}',
+                rightValue: 'true',
+                operator: {
+                  type: 'boolean',
+                  operation: 'equals',
+                },
+              },
+              {
+                id: 'condition3',
+                leftValue: '={{ $json.category }}',
+                rightValue: 'premium',
+                operator: {
+                  type: 'string',
+                  operation: 'equals',
+                },
+              },
+            ],
+            combinator: 'or',
+          },
+          options: {},
+        },
+      },
+
+      notes:
+        'This HYBRID format is the ONLY format supported by N8N UI. ' +
+        'Critical requirements: (1) typeVersion=2, (2) conditions.options wrapper, ' +
+        '(3) unique id field for each condition, (4) parameters.options={} at root.',
+
+      editorRequirements: [
+        {
+          id: 'conditions_options_wrapper',
+          name: 'Conditions Options Wrapper',
+          path: 'conditions.options',
+          checkType: 'exists',
+          expected: { type: 'object' },
+          errorMessage: 'Missing conditions.options wrapper - required for UI editor rendering',
+          severity: 'error',
+          rationale: 'N8N UI editor uses options wrapper to store condition settings (caseSensitive, leftValue, typeValidation)',
+          fix: 'Add conditions.options: { caseSensitive: true, leftValue: "", typeValidation: "strict" }',
+        },
+        {
+          id: 'unique_condition_ids',
+          name: 'Unique Condition IDs',
+          path: 'conditions.conditions[].id',
+          checkType: 'custom',
+          customValidator: (params: Record<string, unknown>) => {
+            const conditions = (params.conditions as any)?.conditions || [];
+            if (!Array.isArray(conditions)) return false;
+            return conditions.every((c: any) => c.id && typeof c.id === 'string');
+          },
+          errorMessage: 'Each condition must have unique id field',
+          severity: 'error',
+          rationale: 'N8N UI uses id field to manage condition component state',
+          fix: 'Add unique id to each condition: { id: "condition1", leftValue: ..., rightValue: ..., operator: ... }',
+        },
+        {
+          id: 'root_options_field',
+          name: 'Root Options Field',
+          path: 'options',
+          checkType: 'exists',
+          expected: { type: 'object' },
+          errorMessage: 'Missing root-level options field',
+          severity: 'error',
+          rationale: 'N8N UI expects options at parameters root level (can be empty object)',
+          fix: 'Add options: {} at parameters root level',
+        },
+        {
+          id: 'combinator_field',
+          name: 'Combinator Field Required',
+          path: 'conditions.combinator',
+          checkType: 'exists',
+          expected: { type: 'string' },
+          errorMessage: 'Missing conditions.combinator field',
+          severity: 'error',
+          rationale: 'Combinator defines how conditions are logically combined (and/or)',
+          fix: 'Add conditions.combinator: "and" or "or"',
+        },
+      ],
+    },
+
+    {
+      name: 'pure_combinator',
+      status: 'deprecated',
+      uiCompatible: false,
+      apiCompatible: true,
+
+      structure: {
+        conditions: {
+          type: 'object',
+          properties: {
+            combinator: {
+              type: 'string',
+              enum: ['and', 'or'],
+              description: 'Logical operator (without options wrapper)',
+            },
+            conditions: {
+              type: 'array',
+              description: 'Conditions WITHOUT id field',
+              items: {
+                type: 'object',
+                properties: {
+                  leftValue: { type: 'string' },
+                  rightValue: { type: 'string' },
+                  operator: { type: 'object' },
+                },
+              },
+            },
           },
         },
       },
@@ -117,144 +307,17 @@ export const ifNodeSchema: NodeSchema = {
             ],
           },
         },
-
         complete: {
           conditions: {
-            combinator: 'or',
+            combinator: 'and',
             conditions: [
               {
-                leftValue: '={{ $json.price }}',
-                rightValue: '200',
-                operator: {
-                  type: 'number',
-                  operation: 'lt',
-                },
-              },
-              {
-                leftValue: '={{ $json.urgent }}',
-                rightValue: 'true',
-                operator: {
-                  type: 'boolean',
-                  operation: 'equals',
-                },
-              },
-              {
-                leftValue: '={{ $json.category }}',
-                rightValue: 'premium',
+                leftValue: '={{ $json.status }}',
+                rightValue: 'success',
                 operator: {
                   type: 'string',
                   operation: 'equals',
                 },
-              },
-            ],
-          },
-        },
-      },
-
-      notes:
-        'This is the ONLY format supported by N8N UI. Always use combinator format. ' +
-        'Created workflows with this format render correctly in UI and work as expected.',
-    },
-
-    {
-      name: 'legacy_options',
-      status: 'deprecated',
-      uiCompatible: false,
-      apiCompatible: true,
-
-      structure: {
-        conditions: {
-          type: 'object',
-          properties: {
-            options: {
-              type: 'object',
-              description: 'Legacy options structure',
-              properties: {
-                caseSensitive: {
-                  type: 'boolean',
-                  description: 'Case-sensitive comparison',
-                },
-                leftValue: {
-                  type: 'string',
-                  description: 'Base value path',
-                },
-                typeValidation: {
-                  type: 'string',
-                  enum: ['strict', 'loose'],
-                  description: 'Type validation mode',
-                },
-              },
-            },
-            string: {
-              type: 'array',
-              description: 'String condition array (LEGACY)',
-              items: {
-                type: 'object',
-                properties: {
-                  value1: {
-                    type: 'string',
-                    description: 'Left value expression',
-                  },
-                  value2: {
-                    type: 'string',
-                    description: 'Right value',
-                  },
-                  operation: {
-                    type: 'string',
-                    description: 'Comparison operation',
-                  },
-                },
-              },
-            },
-            number: {
-              type: 'array',
-              description: 'Number condition array (LEGACY)',
-            },
-            boolean: {
-              type: 'array',
-              description: 'Boolean condition array (LEGACY)',
-            },
-          },
-        },
-      },
-
-      example: {
-        minimal: {
-          conditions: {
-            options: {
-              caseSensitive: true,
-              leftValue: '',
-              typeValidation: 'strict',
-            },
-            string: [
-              {
-                value1: '={{$json.status}}',
-                operation: 'equals',
-                value2: 'success',
-              },
-            ],
-          },
-        },
-
-        complete: {
-          conditions: {
-            options: {
-              caseSensitive: false,
-              leftValue: '={{ $json }}',
-              typeValidation: 'loose',
-            },
-            string: [
-              {
-                value1: '={{$json.category}}',
-                operation: 'equals',
-                value2: 'premium',
-              },
-            ],
-            number: [
-              {
-                value1: '={{$json.price}}',
-                operation: 'lt',
-                value2: '200',
               },
             ],
           },
@@ -263,16 +326,15 @@ export const ifNodeSchema: NodeSchema = {
 
       notes:
         'DO NOT USE. N8N API accepts this format without error, but N8N UI ' +
-        'cannot render it. Results in "Could not find property option" error and ' +
-        'empty workflow canvas. This format appears in older documentation but is ' +
-        'not actually supported by current N8N UI code.',
+        'cannot render it. Missing: options wrapper, condition IDs, root options. ' +
+        'Results in empty workflow canvas.',
     },
   ],
 
   metadata: {
     source: 'ui_created',
-    validatedDate: '2026-01-22T14:00:00+07:00',
-    validatedBy: 'uat_testing',
-    n8nVersion: '1.20.0',
+    validatedDate: '2026-01-23T11:20:00+07:00',
+    validatedBy: 'uat_testing_mvp',
+    n8nVersion: '1.76.1',
   },
 };
