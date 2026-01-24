@@ -12,6 +12,7 @@ export type {
   NodeSchema,
   SchemaFormat,
   SchemaMetadata,
+  EditorRequirement,
   WorkflowExample,
   NodeExample,
   ConnectionExample,

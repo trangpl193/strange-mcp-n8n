@@ -6,6 +6,8 @@ import {
   POSTGRES_WORKFLOW,
   COMPLEX_BRANCHING_WORKFLOW,
   ALL_NODE_TYPES_WORKFLOW,
+  SWITCH_AUTO_CONNECT_WORKFLOW,
+  IF_AUTO_CONNECT_WORKFLOW,
 } from '../../fixtures/workflows.js';
 
 describe('WorkflowTransformer', () => {
@@ -69,6 +71,63 @@ describe('WorkflowTransformer', () => {
       // Second output port (false/output 1) -> Error
       expect(checkConnections.main![1]).toHaveLength(1);
       expect(checkConnections.main![1][0].node).toBe('Error');
+    });
+
+    test('should auto-connect IF node to next 2 steps', () => {
+      const result = transformer.transform(IF_AUTO_CONNECT_WORKFLOW);
+
+      const ifNode = result.nodes!.find(n => n.name === 'Check Urgent');
+      expect(ifNode).toBeDefined();
+
+      const ifConnections = result.connections!['Check Urgent'];
+      // IF node should create 2 output ports
+      expect(ifConnections.main).toHaveLength(2);
+      // First output port (true/output 0) -> Urgent Handler
+      expect(ifConnections.main![0]).toHaveLength(1);
+      expect(ifConnections.main![0][0].node).toBe('Urgent Handler');
+      // Second output port (false/output 1) -> Normal Handler
+      expect(ifConnections.main![1]).toHaveLength(1);
+      expect(ifConnections.main![1][0].node).toBe('Normal Handler');
+    });
+
+    test('should auto-connect Switch node to next N steps based on rules count', () => {
+      const result = transformer.transform(SWITCH_AUTO_CONNECT_WORKFLOW);
+
+      const switchNode = result.nodes!.find(n => n.name === 'Priority Router');
+      expect(switchNode).toBeDefined();
+
+      const switchConnections = result.connections!['Priority Router'];
+      // Switch node with 3 rules should create 4 output ports (3 + 1 fallback)
+      expect(switchConnections.main).toHaveLength(4);
+      // Output 0 -> High Priority
+      expect(switchConnections.main![0]).toHaveLength(1);
+      expect(switchConnections.main![0][0].node).toBe('High Priority');
+      // Output 1 -> Medium Priority
+      expect(switchConnections.main![1]).toHaveLength(1);
+      expect(switchConnections.main![1][0].node).toBe('Medium Priority');
+      // Output 2 -> Low Priority
+      expect(switchConnections.main![2]).toHaveLength(1);
+      expect(switchConnections.main![2][0].node).toBe('Low Priority');
+      // Output 3 (fallback) -> Response
+      expect(switchConnections.main![3]).toHaveLength(1);
+      expect(switchConnections.main![3][0].node).toBe('Response');
+    });
+
+    test('should not create duplicate connections for nodes already used as targets', () => {
+      const result = transformer.transform(IF_AUTO_CONNECT_WORKFLOW);
+
+      // Urgent Handler is already connected from IF node at index 3
+      // Normal Handler is already connected from IF node at index 4
+      // Urgent Handler should NOT auto-connect to Normal Handler (because it's already used)
+      // Normal Handler should auto-connect to Response (because Response is not yet used)
+      const urgentConnections = result.connections!['Urgent Handler'];
+      const normalConnections = result.connections!['Normal Handler'];
+
+      // Urgent Handler should not have connections (next node already used)
+      expect(urgentConnections).toBeUndefined();
+      // Normal Handler should connect to Response (last node not yet used)
+      expect(normalConnections).toBeDefined();
+      expect(normalConnections.main![0][0].node).toBe('Response');
     });
 
     test('should resolve credentials with credential map', () => {

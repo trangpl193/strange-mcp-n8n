@@ -25,6 +25,13 @@ export type {
   WorkflowUpdateOutput,
 } from './workflow-update.js';
 
+export { workflowValidateRender } from './workflow-validate-render.js';
+export type {
+  WorkflowValidateRenderInput,
+  WorkflowValidateRenderOutput,
+  ValidationError,
+} from './workflow-validate-render.js';
+
 export { executionList } from './execution-list.js';
 export type {
   ExecutionListInput,

@@ -11,12 +11,14 @@ import {
   workflowCreate,
   workflowGet,
   workflowUpdate,
+  workflowValidateRender,
   executionList,
   executionDebug,
   type WorkflowListInput,
   type WorkflowCreateInput,
   type WorkflowGetInput,
   type WorkflowUpdateInput,
+  type WorkflowValidateRenderInput,
   type ExecutionListInput,
   type ExecutionDebugInput,
 } from './tools/index.js';
@@ -380,6 +382,23 @@ export class N8NMCPServer {
             }
 
             const result = await workflowUpdate(this.client, input);
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(result, null, 2),
+                },
+              ],
+            };
+          }
+
+          case 'workflow_validate_render': {
+            // Adapter: Map workflow_id from camelCase to snake_case
+            const rawArgs = args as unknown as { workflow_id: string };
+            const input: WorkflowValidateRenderInput = {
+              workflow_id: rawArgs.workflow_id,
+            };
+            const result = await workflowValidateRender(this.client, input);
             return {
               content: [
                 {

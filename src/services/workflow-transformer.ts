@@ -47,6 +47,7 @@ export class WorkflowTransformer {
         const targets = Array.isArray(step.next) ? step.next : [step.next];
 
         // For IF/Switch nodes, each target goes to a separate output port
+        // This creates proper branching with one target per output
         if (mapping?.category === 'logic' && (step.type === 'if' || step.type === 'switch')) {
           connections[sourceNodeName] = {
             main: targets.map(targetName => {
@@ -88,7 +89,19 @@ export class WorkflowTransformer {
         if (mapping?.category === 'logic' && (step.type === 'if' || step.type === 'switch')) {
           // IF node: Auto-connect next 2 steps to output ports 0 and 1
           // Switch node: Auto-connect next N steps based on rules count
-          const outputCount = step.type === 'if' ? 2 : (step.config?.rules?.length || 0) + 1;
+          let outputCount: number;
+          if (step.type === 'if') {
+            outputCount = 2;
+          } else if (step.type === 'switch') {
+            // Switch rules can be at rules.values (rules mode) or rules (direct array)
+            // Most common structure is rules: { values: [...] }
+            const rulesCount = step.config?.rules?.values?.length ||
+                             step.config?.rules?.length ||
+                             0;
+            outputCount = rulesCount + 1; // +1 for fallback output
+          } else {
+            outputCount = 2; // Default for other branching logic nodes
+          }
           const outputs: Array<Array<{ node: string; type: 'main'; index: number }>> = [];
 
           for (let outputIndex = 0; outputIndex < outputCount; outputIndex++) {

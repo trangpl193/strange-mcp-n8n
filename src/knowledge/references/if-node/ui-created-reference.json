@@ -1,0 +1,42 @@
+{
+  "source": "N8N UI",
+  "workflow_id": "sPB8ybdrJbCVjF6M",
+  "workflow_name": "Test IF Branching v1.3.0",
+  "extracted_at": "2026-01-23T11:17:00+07:00",
+  "verified_render": true,
+  "node": {
+    "id": "if-node",
+    "name": "IF",
+    "type": "n8n-nodes-base.if",
+    "type_version": 2,
+    "position": [460, 300],
+    "parameters": {
+      "conditions": {
+        "options": {
+          "caseSensitive": true,
+          "leftValue": "",
+          "typeValidation": "strict"
+        },
+        "conditions": [
+          {
+            "id": "condition1",
+            "leftValue": "={{ $json.value }}",
+            "rightValue": "10",
+            "operator": {
+              "type": "number",
+              "operation": "gt"
+            }
+          }
+        ],
+        "combinator": "and"
+      },
+      "options": {}
+    }
+  },
+  "critical_fields": {
+    "type_version": "MUST be 2, not 1",
+    "conditions.options": "REQUIRED wrapper with caseSensitive, leftValue, typeValidation",
+    "conditions.conditions[].id": "REQUIRED unique id for each condition",
+    "parameters.options": "REQUIRED empty object at root level"
+  }
+}

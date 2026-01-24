@@ -204,6 +204,34 @@ export const workflowUpdateTool: CanonicalToolDefinition = {
 };
 
 /**
+ * workflow_validate_render - Validate workflow can render in N8N UI
+ */
+export const workflowValidateRenderTool: CanonicalToolDefinition = {
+  name: 'workflow_validate_render',
+  description: `Validate that a workflow can be rendered in N8N UI editor.
+
+Performs editor-specific validation checks that go beyond API storage validation. Detects issues that would cause the N8N editor to fail rendering the workflow canvas.
+
+**Use this tool after creating or updating workflows** to verify they will render correctly in the N8N UI.
+
+Common issues detected:
+- Missing required node parameters
+- Invalid connection structures
+- Incorrect parameter formats for branching nodes (If, Switch)
+- Missing or malformed conditions
+- Empty or invalid operator structures
+
+Returns detailed error messages that can be used to fix the workflow.`,
+  parameters: [
+    {
+      name: 'workflow_id',
+      schema: { type: 'string', description: 'Workflow ID to validate' },
+      required: true,
+    },
+  ],
+};
+
+/**
  * execution_list - List workflow executions
  */
 export const executionListTool: CanonicalToolDefinition = {
@@ -467,6 +495,7 @@ export const allTools: CanonicalToolDefinition[] = [
   workflowGetTool,
   workflowCreateTool,
   workflowUpdateTool,
+  workflowValidateRenderTool,
   executionListTool,
   executionDebugTool,
   nodeGetTool,

@@ -172,6 +172,8 @@ export async function schema_validate(
   const warnings: ValidationWarning[] = [];
   let matchedFormat: string | undefined;
   let valid = false;
+  let editorCompatible = false;
+  const editorIssues: import('./types.js').EditorRequirement[] = [];
 
   // Try to match parameters against each format
   for (const format of schema.formats) {
@@ -180,6 +182,38 @@ export async function schema_validate(
     if (match.matches) {
       matchedFormat = format.name;
       valid = true;
+
+      // ✨ NEW: Validate editor requirements (Tier 2)
+      if (format.editorRequirements) {
+        const editorValidation = validateEditorRequirements(
+          parameters,
+          format.editorRequirements,
+          typeVersion
+        );
+
+        editorCompatible = editorValidation.compatible;
+
+        // Add errors for failed requirements
+        for (const failed of editorValidation.failed) {
+          if (failed.severity === 'error') {
+            errors.push({
+              path: failed.path,
+              message: failed.errorMessage,
+              expected: failed.expected,
+            });
+            editorIssues.push(failed);
+          } else {
+            warnings.push({
+              path: failed.path,
+              message: failed.errorMessage,
+              suggestion: failed.fix,
+            });
+          }
+        }
+      } else {
+        // No editor requirements defined = assume compatible if format is UI-compatible
+        editorCompatible = format.uiCompatible;
+      }
 
       // Add warnings for deprecated or UI-incompatible formats
       if (format.status === 'deprecated') {
@@ -212,12 +246,14 @@ export async function schema_validate(
   }
 
   return {
-    valid,
+    valid: valid && editorCompatible, // ✨ Must pass both format AND editor checks
     matchedFormat,
     errors,
     warnings,
+    editorCompatible,
+    editorIssues: editorIssues.length > 0 ? editorIssues : undefined,
     suggestion: errors.length > 0
-      ? `Review schema formats: ${schema.formats.map((f) => f.name).join(', ')}`
+      ? `Review schema formats and editor requirements`
       : undefined,
   };
 }
@@ -237,7 +273,20 @@ function validateAgainstFormat(
   // Basic heuristic validation based on format name
   // This is a simplified implementation - can be enhanced with proper JSON Schema validation
 
-  if (format.name === 'combinator') {
+  if (format.name === 'hybrid') {
+    // If-node hybrid format (typeVersion 2)
+    const conditions = parameters.conditions as any;
+    if (
+      conditions?.options &&
+      conditions?.combinator &&
+      Array.isArray(conditions?.conditions) &&
+      parameters.options !== undefined
+    ) {
+      return { matches: true };
+    }
+  }
+
+  if (format.name === 'combinator' || format.name === 'pure_combinator') {
     // If-node combinator format
     const conditions = parameters.conditions as any;
     if (conditions?.combinator && Array.isArray(conditions?.conditions)) {
@@ -276,5 +325,154 @@ function validateAgainstFormat(
     }
   }
 
+  if (format.name === 'webhook') {
+    // Webhook-node format - requires path field
+    if (parameters.path) {
+      return { matches: true };
+    }
+  }
+
+  if (format.name === 'respond') {
+    // Respond-node format - has respondWith field
+    if (parameters.respondWith !== undefined) {
+      return { matches: true };
+    }
+  }
+
+  if (format.name === 'http_request') {
+    // HTTP Request node format - requires url field
+    if (parameters.url) {
+      return { matches: true };
+    }
+  }
+
+  if (format.name === 'code') {
+    // Code-node format - requires mode, language, and code field
+    if (parameters.mode && parameters.language) {
+      const lang = parameters.language as string;
+      if (
+        (lang === 'javaScript' && parameters.jsCode) ||
+        (lang === 'python' && parameters.pythonCode)
+      ) {
+        return { matches: true };
+      }
+    }
+  }
+
+  if (format.name === 'manual_mapping') {
+    // Set-node manual mapping format - requires mode and assignments
+    const assignments = parameters.assignments as any;
+    if (
+      parameters.mode === 'manual' &&
+      assignments?.assignments &&
+      Array.isArray(assignments.assignments)
+    ) {
+      return { matches: true };
+    }
+  }
+
   return { matches: false };
+}
+
+/**
+ * Validate parameters against editor requirements
+ * @internal
+ * @since Tier 2 Enhancement (2026-01-24)
+ */
+function validateEditorRequirements(
+  parameters: Record<string, unknown>,
+  requirements: import('./types.js').EditorRequirement[],
+  typeVersion?: number
+): {
+  compatible: boolean;
+  failed: import('./types.js').EditorRequirement[];
+} {
+  const failed: import('./types.js').EditorRequirement[] = [];
+
+  for (const req of requirements) {
+    let passes = false;
+
+    if (req.checkType === 'exists') {
+      passes = hasPath(parameters, req.path);
+      if (passes && req.expected?.type) {
+        const value = getPath(parameters, req.path);
+        passes =
+          typeof value === req.expected.type ||
+          (req.expected.type === 'array' && Array.isArray(value));
+      }
+      if (passes && req.expected?.minLength !== undefined) {
+        const value = getPath(parameters, req.path);
+        if (Array.isArray(value)) {
+          passes = value.length >= req.expected.minLength;
+        }
+      }
+    } else if (req.checkType === 'value') {
+      const value = getPath(parameters, req.path);
+      passes = value === req.expected?.value;
+    } else if (req.checkType === 'type') {
+      const value = getPath(parameters, req.path);
+      passes = typeof value === req.expected?.type;
+    } else if (req.checkType === 'custom' && req.customValidator) {
+      passes = req.customValidator(parameters);
+    }
+
+    if (!passes) {
+      failed.push(req);
+    }
+  }
+
+  return {
+    compatible: failed.filter((f) => f.severity === 'error').length === 0,
+    failed,
+  };
+}
+
+/**
+ * Helper: Check if path exists in object
+ * Supports nested paths like "conditions.options" and array notation "conditions.conditions[].id"
+ * @internal
+ */
+function hasPath(obj: any, path: string): boolean {
+  const parts = path.split('.');
+  let current = obj;
+
+  for (const part of parts) {
+    if (part.endsWith('[]')) {
+      // Array element check
+      const arrayPath = part.slice(0, -2);
+      if (!current[arrayPath] || !Array.isArray(current[arrayPath])) {
+        return false;
+      }
+      // For array notation, we just verify array exists
+      // Actual element check happens in custom validators
+      current = current[arrayPath];
+    } else {
+      if (current[part] === undefined) {
+        return false;
+      }
+      current = current[part];
+    }
+  }
+
+  return true;
+}
+
+/**
+ * Helper: Get value at path
+ * @internal
+ */
+function getPath(obj: any, path: string): any {
+  const parts = path.split('.');
+  let current = obj;
+
+  for (const part of parts) {
+    if (part.endsWith('[]')) {
+      const arrayPath = part.slice(0, -2);
+      current = current[arrayPath];
+    } else {
+      current = current?.[part];
+    }
+  }
+
+  return current;
 }

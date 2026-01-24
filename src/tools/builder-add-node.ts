@@ -179,6 +179,56 @@ function calculateNextPosition(existingNodes: DraftNode[]): [number, number] {
 }
 
 /**
+ * Apply HYBRID format transformation for IF node
+ *
+ * Transforms simplified condition format into N8N UI-compatible HYBRID format:
+ * - Adds conditions.options wrapper (caseSensitive, leftValue, typeValidation)
+ * - Adds unique id to each condition
+ * - Adds root-level options: {}
+ * - Ensures typeVersion 2 compatibility
+ *
+ * Reference: /home/strange/projects/strange-mcp-n8n/src/knowledge/schemas/if-node.ts
+ */
+function applyIfNodeHybridFormat(params: Record<string, unknown>): Record<string, unknown> {
+  // If conditions exist, transform to HYBRID format
+  if (params.conditions && typeof params.conditions === 'object') {
+    const conditions = params.conditions as Record<string, unknown>;
+
+    // Check if already in HYBRID format
+    const hasOptionsWrapper = 'options' in conditions;
+    const hasConditionsArray = 'conditions' in conditions && Array.isArray(conditions.conditions);
+
+    if (!hasOptionsWrapper && hasConditionsArray) {
+      // Transform from pure combinator to HYBRID
+      const conditionsArray = conditions.conditions as Array<Record<string, unknown>>;
+
+      // Add unique id to each condition if missing
+      conditionsArray.forEach((condition, index) => {
+        if (!condition.id) {
+          condition.id = `condition${index + 1}`;
+        }
+      });
+
+      // Add options wrapper
+      conditions.options = {
+        caseSensitive: true,
+        leftValue: '',
+        typeValidation: 'strict',
+      };
+
+      params.conditions = conditions;
+    }
+  }
+
+  // Add root-level options if missing
+  if (!params.options) {
+    params.options = {};
+  }
+
+  return params;
+}
+
+/**
  * Build N8N parameters from simplified config
  */
 function buildParameters(
@@ -237,11 +287,12 @@ function buildParameters(
       if (config.statusCode) params.options = { responseCode: config.statusCode };
       if (config.body) params.responseBody = config.body;
       break;
-  }
 
-  // Apply node-specific schema defaults (e.g., If node requires 'options' object)
-  // TODO: Implement applyNodeDefaults function
-  // params = applyNodeDefaults(type, params);
+    case 'if':
+      // Apply HYBRID format for UI compatibility (typeVersion 2)
+      params = applyIfNodeHybridFormat(params);
+      break;
+  }
 
   return params;
 }

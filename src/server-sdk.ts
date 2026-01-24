@@ -40,7 +40,8 @@ import {
   handleQuirksCheck,
   handleQuirksSearch,
   handleSchemaValidate,
-} from './knowledge/mcp-tool-handlers.js';
+  initializeCoreSchemas,
+} from './knowledge/index.js';
 
 // Configuration interface
 export interface N8NMcpServerConfig {
@@ -733,6 +734,9 @@ export async function startServer(config: N8NMcpServerConfig): Promise<void> {
   // Initialize canonical schema system (Phase 3)
   initializeSchemas();
   console.log(`🎯 Target API detected: ${detectAPI()}`);
+
+  // Initialize knowledge layer (Phase 3A)
+  await initializeCoreSchemas();
 
   // Initialize session store (Redis or In-Memory based on REDIS_URL)
   await initSessionStore();

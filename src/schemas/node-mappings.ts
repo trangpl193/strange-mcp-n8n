@@ -75,7 +75,7 @@ export const NODE_MAPPINGS: Record<string, NodeMapping> = {
   // Logic
   if: {
     n8nType: 'n8n-nodes-base.if',
-    typeVersion: 1,
+    typeVersion: 2, // CRITICAL: Must be 2 for HYBRID format UI compatibility
     category: 'logic',
   },
 
