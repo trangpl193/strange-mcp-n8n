@@ -38,6 +38,7 @@ export async function handleSchemaGet(args: {
  */
 export async function handleSchemaList(args?: {
   status?: 'recommended' | 'deprecated' | 'experimental';
+  summary?: boolean;
 }): Promise<unknown> {
   try {
     const schemas = await schema_list(args);

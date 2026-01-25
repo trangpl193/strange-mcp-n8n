@@ -27,6 +27,9 @@ export type {
   SchemaListQuery,
 } from './types.js';
 
+// Discovery types (Tier 1)
+export type { SchemaDiscoveryItem } from './tools-discovery.js';
+
 // Core registry
 export { SchemaRegistry, schemaRegistry, initializeCoreSchemas } from './core/registry.js';
 
@@ -46,6 +49,9 @@ export {
   quirks_search,
   schema_validate,
 } from './tools.js';
+
+// Discovery Tools (Tier 1: Progressive Loading)
+export { schema_discover } from './tools-discovery.js';
 
 // MCP Tool Definitions
 export { knowledgeLayerTools } from './mcp-tool-definitions.js';

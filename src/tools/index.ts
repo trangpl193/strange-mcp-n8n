@@ -2,8 +2,18 @@ export { workflowList } from './workflow-list.js';
 export type {
   WorkflowListInput,
   WorkflowListOutput,
+  WorkflowListMode,
+  WorkflowMinimal,
   WorkflowSummary,
+  WorkflowDetailed,
 } from './workflow-list.js';
+
+export { workflowDiscover } from './workflow-discover.js';
+export type {
+  WorkflowDiscoverInput,
+  WorkflowDiscoverOutput,
+  WorkflowDiscoveryItem,
+} from './workflow-discover.js';
 
 export { workflowCreate } from './workflow-create.js';
 export type {

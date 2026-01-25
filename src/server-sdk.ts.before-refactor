@@ -1,22 +1,23 @@
 /**
- * MCP N8N Server using @strange/mcp-core transport
+ * MCP N8N Server using Official SDK
  *
- * Migrated to use standardized transport layer from mcp-core v1.2.0.
- * Eliminates ~100 lines of transport boilerplate code.
+ * This server uses @modelcontextprotocol/sdk for transport layer
+ * while keeping custom tool implementations.
  *
- * Original: 2026-01-20 (direct SDK usage)
- * Refactored: 2026-01-23 (mcp-core factory pattern)
- * See: /home/strange/.claude/briefs/mcp-platform-dependencies-2026-01-23.md
+ * Created: 2026-01-20
+ * Reason: Claude Code CLI requires Streamable HTTP protocol
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import express, { Request, Response } from 'express';
+import { randomUUID } from 'crypto';
 import { z } from 'zod';
-import { createStreamableHttpServer } from '@strange/mcp-core';
+import { createApiKeyMiddleware, SessionCleanup } from '@strange/mcp-core';
 import { N8NClient } from './services/index.js';
 import { initSessionStore, getSessionStoreType } from './services/session-store-factory.js';
 import { initializeSchemas, detectAPI } from './schema/index.js';
 import {
-  workflowDiscover,
   workflowList,
   workflowCreate,
   workflowGet,
@@ -41,9 +42,7 @@ import {
   handleQuirksCheck,
   handleQuirksSearch,
   handleSchemaValidate,
-  initializeCoreSchemas,
-  schema_discover,
-} from './knowledge/index.js';
+} from './knowledge/mcp-tool-handlers.js';
 
 // Configuration interface
 export interface N8NMcpServerConfig {
@@ -53,8 +52,21 @@ export interface N8NMcpServerConfig {
   timeout?: number;
   httpPort?: number;
   httpHost?: string;
-  sessionTimeout?: number;
-  cleanupInterval?: number;
+}
+
+// Transport session storage
+const transports: Record<string, StreamableHTTPServerTransport> = {};
+
+/**
+ * Check if request is an initialize request
+ */
+function isInitializeRequest(body: unknown): boolean {
+  return (
+    typeof body === 'object' &&
+    body !== null &&
+    'method' in body &&
+    (body as { method: string }).method === 'initialize'
+  );
 }
 
 /**
@@ -63,45 +75,23 @@ export interface N8NMcpServerConfig {
 function createMcpServer(client: N8NClient): McpServer {
   const server = new McpServer({
     name: 'strange-mcp-n8n',
-    version: '1.3.0',
+    version: '1.2.0',
   });
 
-  // Tool: workflow_discover (Tier 1 - Ultra-lightweight)
-  server.registerTool(
-    'workflow_discover',
-    {
-      description: 'Tier 1 (Discovery): Ultra-lightweight workflow discovery. Returns only ID, name, and active status. Use for: (1) Listing all workflows without token overhead (~1 token/workflow vs ~29), (2) Checking workflow existence, (3) Bulk status checks. Token savings: 96% vs workflow_list. For more details, use workflow_list or workflow_get.',
-      inputSchema: {
-        active: z.boolean().optional().describe('Filter by active status'),
-        tags: z.string().optional().describe('Filter by tags (comma-separated)'),
-        name: z.string().optional().describe('Filter by workflow name (partial match)'),
-        limit: z.number().optional().describe('Maximum number of workflows to return (default: 100)'),
-        cursor: z.string().optional().describe('Pagination cursor from previous response'),
-      },
-    },
-    async (args: { active?: boolean; tags?: string; name?: string; limit?: number; cursor?: string }) => {
-      const result = await workflowDiscover(client, args);
-      return {
-        content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
-      };
-    }
-  );
-
-  // Tool: workflow_list (Progressive Loading Tiers 1-3)
+  // Tool: workflow_list
   server.registerTool(
     'workflow_list',
     {
-      description: 'List N8N workflows with filtering and progressive loading. Supports 3 detail levels via mode parameter: minimal (id/name/active), summary (default: adds tags/nodes_count/dates), detailed (adds node_types/connections/triggers). Use minimal for lightweight browsing, summary for general use, detailed for analysis.',
+      description: 'List N8N workflows with filtering. Returns workflow summaries with metadata.',
       inputSchema: {
         active: z.boolean().optional().describe('Filter by active status'),
         tags: z.string().optional().describe('Filter by tags (comma-separated)'),
         name: z.string().optional().describe('Filter by workflow name (partial match)'),
         limit: z.number().optional().describe('Maximum number of workflows to return'),
         cursor: z.string().optional().describe('Pagination cursor'),
-        mode: z.enum(['minimal', 'summary', 'detailed']).optional().describe('Detail level: "minimal" (id/name/active), "summary" (default: +tags/nodes_count/dates), "detailed" (+node_types/connections/triggers)'),
       },
     },
-    async (args: { active?: boolean; tags?: string; name?: string; limit?: number; cursor?: string; mode?: 'minimal' | 'summary' | 'detailed' }) => {
+    async (args: { active?: boolean; tags?: string; name?: string; limit?: number; cursor?: string }) => {
       const result = await workflowList(client, args);
       return {
         content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
@@ -665,35 +655,13 @@ function createMcpServer(client: N8NClient): McpServer {
     {
       description:
         'List all available node schemas in the knowledge library. ' +
-        'Useful for discovering what schemas are documented and available. ' +
-        'Use summary=true for lightweight discovery (95% token reduction: ~170 tokens vs ~16k).',
+        'Useful for discovering what schemas are documented and available.',
       inputSchema: {
         status: z.enum(['recommended', 'deprecated', 'experimental']).optional().describe('Filter by format status (optional)'),
-        summary: z.boolean().optional().describe('Return lightweight summary (recommended for discovery). Reduces response from ~16k to ~170 tokens (95% savings).'),
       },
     },
     async (args, _extra) => {
       const result = await handleSchemaList(args);
-      return {
-        content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
-      };
-    }
-  );
-
-  // Tool: schema_discover (NEW - Tier 1: Progressive Loading)
-  server.registerTool(
-    'schema_discover',
-    {
-      description:
-        'Discover available schemas (Tier 1: minimal discovery layer). ' +
-        'Returns only node IDs and basic counts (~200 tokens for 8 schemas). ' +
-        'Part of Progressive Loading Architecture to prevent session overflow. ' +
-        'Use schema_get(id) to get details for specific schemas. ' +
-        'Recommended: Use this instead of schema_list() for initial discovery.',
-      inputSchema: {},
-    },
-    async (_args, _extra) => {
-      const result = await schema_discover();
       return {
         content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
       };
@@ -752,7 +720,7 @@ function createMcpServer(client: N8NClient): McpServer {
         'Use before committing workflows to prevent rendering issues.',
       inputSchema: {
         nodeType: z.string().describe('Simplified node type identifier'),
-        parameters: z.record(z.string(), z.any()).describe('Node parameters to validate (JSON object)'),
+        parameters: z.record(z.any()).describe('Node parameters to validate (JSON object)'),
         typeVersion: z.number().optional().describe('Node type version number (optional)'),
       },
     },
@@ -768,21 +736,18 @@ function createMcpServer(client: N8NClient): McpServer {
 }
 
 /**
- * Start MCP N8N Server using @strange/mcp-core transport
- *
- * Migrated to use standardized transport layer from mcp-core v1.2.0.
- * Eliminates ~100 lines of transport boilerplate code.
- *
- * Refactored: 2026-01-23
- * See: /home/strange/.claude/briefs/mcp-platform-dependencies-2026-01-23.md
+ * Start HTTP server with StreamableHTTP transport
  */
 export async function startServer(config: N8NMcpServerConfig): Promise<void> {
+  const app = express();
+  app.use(express.json());
+
+  const httpPort = config.httpPort || 3302;
+  const httpHost = config.httpHost || '0.0.0.0';
+
   // Initialize canonical schema system (Phase 3)
   initializeSchemas();
   console.log(`🎯 Target API detected: ${detectAPI()}`);
-
-  // Initialize knowledge layer (Phase 3A)
-  await initializeCoreSchemas();
 
   // Initialize session store (Redis or In-Memory based on REDIS_URL)
   await initSessionStore();
@@ -795,25 +760,103 @@ export async function startServer(config: N8NMcpServerConfig): Promise<void> {
     timeout: config.timeout || 30000,
   });
 
-  console.log(`🎯 N8N URL: ${config.n8nUrl}`);
+  // Health check endpoint
+  app.get('/health', (_req: Request, res: Response) => {
+    res.json({
+      status: 'healthy',
+      service: 'strange-mcp-n8n',
+      version: '1.2.0',
+      transport: 'streamable-http',
+      timestamp: new Date().toISOString(),
+    });
+  });
 
-  // Use standardized transport from mcp-core
-  await createStreamableHttpServer({
-    serverInfo: {
-      name: 'strange-mcp-n8n',
-      version: '1.3.0',
+  // Session cleanup manager
+  const sessionCleanup = new SessionCleanup({
+    sessionTimeoutMs: 30 * 60 * 1000, // 30 minutes
+    cleanupIntervalMs: 5 * 60 * 1000,  // 5 minutes
+    onSessionCleanup: (sessionId) => {
+      if (transports[sessionId]) {
+        console.log(`🗑️  Cleaned up stale session: ${sessionId}`);
+        delete transports[sessionId];
+      }
     },
-    serverFactory: () => createMcpServer(client),
-    apiKey: config.mcpApiKey,
-    httpPort: config.httpPort ?? 3302,
-    httpHost: config.httpHost ?? '0.0.0.0',
-    sessionTimeout: config.sessionTimeout,
-    cleanupInterval: config.cleanupInterval,
-    onSessionInitialized: (sessionId: string) => {
-      console.log(`📊 N8N session active: ${sessionId}`);
-    },
-    onSessionClosed: (sessionId: string) => {
-      console.log(`📊 N8N session ended: ${sessionId}`);
-    },
+  });
+
+  // API key authentication middleware (from mcp-core)
+  const authenticate = createApiKeyMiddleware({ apiKey: config.mcpApiKey });
+
+  // MCP endpoint
+  app.post('/mcp', authenticate as any, async (req: Request, res: Response) => {
+    const sessionId = req.headers['mcp-session-id'] as string | undefined;
+
+    try {
+      let transport: StreamableHTTPServerTransport;
+
+      if (sessionId && transports[sessionId]) {
+        // Reuse existing transport - update activity
+        transport = transports[sessionId];
+        sessionCleanup.updateActivity(sessionId);
+      } else if (!sessionId && isInitializeRequest(req.body)) {
+        // New session initialization
+        transport = new StreamableHTTPServerTransport({
+          sessionIdGenerator: () => randomUUID(),
+          onsessioninitialized: (newSessionId) => {
+            console.log(`✅ Session initialized: ${newSessionId}`);
+            transports[newSessionId] = transport;
+            sessionCleanup.registerSession(newSessionId);
+          },
+        });
+
+        // Cleanup on close
+        transport.onclose = () => {
+          const sid = transport.sessionId;
+          if (sid && transports[sid]) {
+            console.log(`❌ Session closed: ${sid}`);
+            sessionCleanup.removeSession(sid);
+            delete transports[sid];
+          }
+        };
+
+        // Connect MCP server to transport
+        const server = createMcpServer(client);
+        await server.connect(transport);
+
+        // Handle this request
+        await transport.handleRequest(req, res, req.body);
+        return;
+      } else {
+        // Invalid request
+        res.status(400).json({
+          jsonrpc: '2.0',
+          error: { code: -32000, message: 'Bad Request: No valid session ID provided' },
+          id: null,
+        });
+        return;
+      }
+
+      // Handle request with existing transport
+      await transport.handleRequest(req, res, req.body);
+    } catch (error) {
+      console.error('❌ MCP request error:', error);
+      if (!res.headersSent) {
+        res.status(500).json({
+          jsonrpc: '2.0',
+          error: { code: -32603, message: 'Internal server error' },
+          id: null,
+        });
+      }
+    }
+  });
+
+  // Start server
+  return new Promise((resolve) => {
+    app.listen(httpPort, httpHost, () => {
+      console.log(`🚀 MCP N8N Server listening on http://${httpHost}:${httpPort}/mcp`);
+      console.log(`📊 Health check: http://${httpHost}:${httpPort}/health`);
+      console.log(`🔑 API Key authentication enabled`);
+      console.log(`🎯 N8N URL: ${config.n8nUrl}`);
+      resolve();
+    });
   });
 }

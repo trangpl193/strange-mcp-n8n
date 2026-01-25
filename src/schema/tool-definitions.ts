@@ -8,11 +8,41 @@
 import type { CanonicalToolDefinition } from '@strange/mcp-core';
 
 /**
- * workflow_list - List workflows with filtering
+ * workflow_discover - Ultra-lightweight workflow discovery (Tier 1)
+ */
+export const workflowDiscoverTool: CanonicalToolDefinition = {
+  name: 'workflow_discover',
+  description: 'Tier 1 (Discovery): Ultra-lightweight workflow discovery. Returns only ID, name, and active status. Use for: (1) Listing all workflows without token overhead (~1 token/workflow vs ~29), (2) Checking workflow existence, (3) Bulk status checks. Token savings: 96% vs workflow_list. For more details, use workflow_list or workflow_get.',
+  parameters: [
+    {
+      name: 'active',
+      schema: { type: 'boolean', description: 'Filter by active status', optional: true },
+    },
+    {
+      name: 'tags',
+      schema: { type: 'string', description: 'Filter by tags (comma-separated)', optional: true },
+    },
+    {
+      name: 'name',
+      schema: { type: 'string', description: 'Filter by workflow name (partial match)', optional: true },
+    },
+    {
+      name: 'limit',
+      schema: { type: 'number', description: 'Maximum number of workflows to return (default: 100)', optional: true },
+    },
+    {
+      name: 'cursor',
+      schema: { type: 'string', description: 'Pagination cursor from previous response', optional: true },
+    },
+  ],
+};
+
+/**
+ * workflow_list - List workflows with filtering (Progressive Loading Tiers 1-3)
  */
 export const workflowListTool: CanonicalToolDefinition = {
   name: 'workflow_list',
-  description: 'List N8N workflows with filtering. Returns workflow summaries with metadata.',
+  description: 'List N8N workflows with filtering and progressive loading. Supports 3 detail levels via mode parameter: minimal (id/name/active), summary (default: adds tags/nodes_count/dates), detailed (adds node_types/connections/triggers). Use minimal for lightweight browsing, summary for general use, detailed for analysis.',
   parameters: [
     {
       name: 'active',
@@ -33,6 +63,15 @@ export const workflowListTool: CanonicalToolDefinition = {
     {
       name: 'cursor',
       schema: { type: 'string', description: 'Pagination cursor', optional: true },
+    },
+    {
+      name: 'mode',
+      schema: {
+        type: 'string',
+        description: 'Detail level: "minimal" (id/name/active), "summary" (default: +tags/nodes_count/dates), "detailed" (+node_types/connections/triggers)',
+        enum: ['minimal', 'summary', 'detailed'],
+        optional: true,
+      },
     },
   ],
 };
