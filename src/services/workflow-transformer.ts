@@ -93,9 +93,12 @@ export class WorkflowTransformer {
           if (step.type === 'if') {
             outputCount = 2;
           } else if (step.type === 'switch') {
-            // Switch rules can be at rules.values (rules mode) or rules (direct array)
-            // Most common structure is rules: { values: [...] }
-            const rulesCount = step.config?.rules?.values?.length ||
+            // Switch rules can be at:
+            // 1. rules.rules (expression+multipleOutputs format - RECOMMENDED)
+            // 2. rules.values (rules mode - DEPRECATED/UI-incompatible)
+            // 3. rules (direct array - rare)
+            const rulesCount = step.config?.rules?.rules?.length ||
+                             step.config?.rules?.values?.length ||
                              step.config?.rules?.length ||
                              0;
             outputCount = rulesCount + 1; // +1 for fallback output

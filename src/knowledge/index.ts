@@ -37,6 +37,10 @@ export { SchemaRegistry, schemaRegistry, initializeCoreSchemas } from './core/re
 export { ifNodeSchema } from './schemas/if-node.js';
 export { switchNodeSchema } from './schemas/switch-node.js';
 export { filterNodeSchema } from './schemas/filter-node.js';
+export { postgresNodeSchema } from './schemas/postgres-node.js';
+export { manualTriggerNodeSchema } from './schemas/manual-trigger-node.js';
+export { scheduleTriggerNodeSchema } from './schemas/schedule-trigger-node.js';
+export { mergeNodeSchema } from './schemas/merge-node.js';
 
 // Quirks
 export { ifNodeQuirks, ifNodeDualFormatQuirk } from './quirks/if-node.js';

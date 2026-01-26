@@ -3,11 +3,13 @@ import { N8NClient } from '../services/index.js';
 import { WorkflowTransformer } from '../services/workflow-transformer.js';
 import type { SimplifiedWorkflow } from '../schemas/simplified-workflow.js';
 import type { N8NWorkflow } from '../types.js';
+import { workflowValidateRender, type ValidationError } from './workflow-validate-render.js';
 
 export interface WorkflowCreateInput {
   workflow: SimplifiedWorkflow;
   credentials?: Record<string, string>;  // Map of credential name → credential ID
   activate?: boolean;                     // Activate workflow after creation
+  validate?: boolean;                     // Validate workflow rendering after creation (default: true)
 }
 
 export interface WorkflowCreateOutput {
@@ -16,6 +18,11 @@ export interface WorkflowCreateOutput {
   active: boolean;
   nodes_count: number;
   created_at: string;
+  validation?: {                          // Validation results (present if validate !== false)
+    valid: boolean;
+    errors: ValidationError[];
+    warnings: string[];
+  };
   meta: ExecutionMetadata;
 }
 
@@ -80,6 +87,29 @@ export async function workflowCreate(
     }
   }
 
+  // Optional post-creation validation (default: enabled)
+  let validationResult: WorkflowCreateOutput['validation'] = undefined;
+  if (input.validate !== false) {
+    try {
+      const validation = await workflowValidateRender(client, {
+        workflow_id: response.id,
+      });
+
+      validationResult = {
+        valid: validation.valid,
+        errors: validation.errors,
+        warnings: validation.warnings,
+      };
+    } catch (validationError) {
+      // Validation failed - include error in warnings
+      validationResult = {
+        valid: false,
+        errors: [],
+        warnings: [`Validation check failed: ${validationError}`],
+      };
+    }
+  }
+
   // Execution metadata
   const meta: ExecutionMetadata = createMetadataFromStart(startTime, '1.2.0');
 
@@ -89,6 +119,7 @@ export async function workflowCreate(
     active: finalActive,
     nodes_count: response.nodes.length,
     created_at: response.createdAt,
+    validation: validationResult,
     meta,
   };
 }

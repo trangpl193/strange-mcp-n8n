@@ -398,6 +398,50 @@ function validateAgainstFormat(
     }
   }
 
+  if (format.name === 'executeQuery') {
+    // Postgres-node executeQuery format - requires operation and query
+    if (
+      parameters.operation === 'executeQuery' &&
+      typeof parameters.query === 'string'
+    ) {
+      return { matches: true };
+    }
+  }
+
+  if (format.name === 'insert') {
+    // Postgres-node insert format - requires operation, table, and columns
+    if (
+      parameters.operation === 'insert' &&
+      typeof parameters.table === 'string' &&
+      typeof parameters.columns === 'string'
+    ) {
+      return { matches: true };
+    }
+  }
+
+  if (format.name === 'update') {
+    // Postgres-node update format - requires operation, table, updateKey, and columns
+    if (
+      parameters.operation === 'update' &&
+      typeof parameters.table === 'string' &&
+      typeof parameters.updateKey === 'string' &&
+      typeof parameters.columns === 'string'
+    ) {
+      return { matches: true };
+    }
+  }
+
+  if (format.name === 'delete') {
+    // Postgres-node delete format - requires operation, table, and deleteKey
+    if (
+      parameters.operation === 'delete' &&
+      typeof parameters.table === 'string' &&
+      typeof parameters.deleteKey === 'string'
+    ) {
+      return { matches: true };
+    }
+  }
+
   return { matches: false };
 }
 

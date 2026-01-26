@@ -152,9 +152,12 @@ export async function initializeCoreSchemas(): Promise<void> {
 
   // Import schemas - Trigger nodes
   const { webhookNodeSchema } = await import('../schemas/webhook-node.js');
+  const { manualTriggerNodeSchema } = await import('../schemas/manual-trigger-node.js');
+  const { scheduleTriggerNodeSchema } = await import('../schemas/schedule-trigger-node.js');
 
   // Import schemas - Integration nodes
   const { httpRequestNodeSchema } = await import('../schemas/http-request-node.js');
+  const { postgresNodeSchema } = await import('../schemas/postgres-node.js');
 
   // Import schemas - Output nodes
   const { respondNodeSchema } = await import('../schemas/respond-node.js');
@@ -162,6 +165,7 @@ export async function initializeCoreSchemas(): Promise<void> {
   // Import schemas - Data transformation nodes
   const { codeNodeSchema } = await import('../schemas/code-node.js');
   const { setNodeSchema } = await import('../schemas/set-node.js');
+  const { mergeNodeSchema } = await import('../schemas/merge-node.js');
 
   // Import quirks
   const { ifNodeQuirks } = await import('../quirks/if-node.js');
@@ -173,9 +177,12 @@ export async function initializeCoreSchemas(): Promise<void> {
 
   // Register schemas - Trigger nodes
   schemaRegistry.registerSchema(webhookNodeSchema);
+  schemaRegistry.registerSchema(manualTriggerNodeSchema);
+  schemaRegistry.registerSchema(scheduleTriggerNodeSchema);
 
   // Register schemas - Integration nodes
   schemaRegistry.registerSchema(httpRequestNodeSchema);
+  schemaRegistry.registerSchema(postgresNodeSchema);
 
   // Register schemas - Output nodes
   schemaRegistry.registerSchema(respondNodeSchema);
@@ -183,9 +190,10 @@ export async function initializeCoreSchemas(): Promise<void> {
   // Register schemas - Data transformation nodes
   schemaRegistry.registerSchema(codeNodeSchema);
   schemaRegistry.registerSchema(setNodeSchema);
+  schemaRegistry.registerSchema(mergeNodeSchema);
 
   // Register quirks
   ifNodeQuirks.forEach((quirk) => schemaRegistry.registerQuirk(quirk));
 
-  console.log('✅ Knowledge Layer initialized: 8 schemas, 1 quirk registered');
+  console.log('✅ Knowledge Layer initialized: 12 schemas, 1 quirk registered');
 }

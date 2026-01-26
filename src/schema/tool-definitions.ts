@@ -92,11 +92,36 @@ export const workflowGetTool: CanonicalToolDefinition = {
 };
 
 /**
- * workflow_create - Create new workflow
+ * workflow_create - Create new workflow with automatic validation
  */
 export const workflowCreateTool: CanonicalToolDefinition = {
   name: 'workflow_create',
-  description: 'Create a new N8N workflow from simplified schema. Returns created workflow with ID.',
+  description: `Create a new N8N workflow from simplified schema.
+
+**Automatic Validation (Default: Enabled)**
+After creating the workflow, automatically validates it can render in N8N UI editor. This catches issues like:
+- Missing required node parameters
+- Incorrect branching connections
+- Invalid parameter formats
+
+**Validation Behavior:**
+- Default: validate=true (automatic validation)
+- To skip: pass validate=false
+- Returns validation results in response.validation field
+
+**Response includes:**
+- workflow_id, name, active status
+- validation.valid (true/false)
+- validation.errors (array of issues)
+- validation.warnings (array of suggestions)
+
+**Recommended workflow:**
+1. Create workflow (validation happens automatically)
+2. Check response.validation.valid
+3. If false, review response.validation.errors
+4. Fix issues and recreate workflow
+
+Returns created workflow with ID and validation results.`,
   parameters: [
     {
       name: 'name',
@@ -148,6 +173,14 @@ export const workflowCreateTool: CanonicalToolDefinition = {
         optional: true,
       },
     },
+    {
+      name: 'validate',
+      schema: {
+        type: 'boolean',
+        description: 'Validate workflow rendering after creation (default: true). Set to false to skip validation.',
+        optional: true,
+      },
+    },
   ],
 };
 
@@ -156,7 +189,41 @@ export const workflowCreateTool: CanonicalToolDefinition = {
  */
 export const workflowUpdateTool: CanonicalToolDefinition = {
   name: 'workflow_update',
-  description: 'Update an existing N8N workflow. Supports simplified schema replacement, direct N8N JSON, or quick operations.',
+  description: `Update an existing N8N workflow. Supports 3 strategies - choose ONLY ONE per call.
+
+**DECISION TREE - Read this first:**
+
+What am I changing?
+├─ JUST metadata (name, active, tags)?
+│  → workflow_update({ workflowId: "...", rename: "...", activate: true })
+│  → Cost: ~100 tokens ✅
+│
+├─ ANY nodes (add, remove, modify, connect)?
+│  → USE BUILDER PATTERN INSTEAD!
+│  → builder_start() → builder_add_node() → builder_commit()
+│  → Cost: ~500 tokens ✅
+│  → DO NOT use workflow_update for node changes!
+│
+└─ Have complete validated N8N JSON?
+   → workflow_update({ workflowId: "...", workflow_json: {...} })
+   → Cost: ~1500 tokens ⚠️ EXPERT MODE ONLY
+
+**CRITICAL RULES:**
+1. Never mix strategies in a single call
+2. For node changes, always use builder pattern
+3. Quick ops are for metadata only
+4. Provide ALL required fields for chosen strategy
+
+**Examples:**
+
+Rename workflow (quick op):
+{ workflowId: "abc123", rename: "New Name" }
+
+Activate workflow (quick op):
+{ workflowId: "abc123", activate: true }
+
+DO NOT do this:
+{ workflowId: "abc123", nodes_json: [...] }  ❌ Use builder pattern instead!`,
   parameters: [
     {
       name: 'workflowId',
@@ -497,7 +564,23 @@ export const builderConnectTool: CanonicalToolDefinition = {
  */
 export const builderCommitTool: CanonicalToolDefinition = {
   name: 'builder_commit',
-  description: 'Commit the builder draft to N8N. Creates the workflow and closes the session.',
+  description: `Commit the builder draft to N8N. Creates the workflow and closes the session.
+
+**Auto-injected fields:**
+- Workflow name (from builder_start)
+- All nodes added via builder_add_node
+- All connections made via builder_connect
+
+**Pre-commit validation:**
+- Session must exist and be active
+- At least one node must be added
+- At least one trigger node required (webhook, schedule, manual)
+
+**You only need to provide:**
+- sessionId (required)
+- activate (optional, default: false)
+
+The workflow name is automatically pulled from the session - you do NOT need to provide it again.`,
   parameters: [
     {
       name: 'sessionId',

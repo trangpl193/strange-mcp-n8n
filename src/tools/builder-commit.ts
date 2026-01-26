@@ -139,6 +139,24 @@ function transformDraftToN8N(session: BuilderSession): {
 } {
   const draft = session.workflow_draft;
 
+  // Explicit name validation: Catch corrupted session state
+  if (!draft.name || draft.name.trim() === '') {
+    throw new McpError(
+      McpErrorCode.INVALID_PARAMS,
+      'builder_commit failed: Workflow name is missing or empty',
+      {
+        details: {
+          hint: 'This indicates a corrupted session. The workflow name should have been set by builder_start.',
+          recovery: [
+            'Call builder_discard to clean up this session',
+            'Start fresh with builder_start and provide a name',
+          ],
+          session_id: session.session_id,
+        },
+      }
+    );
+  }
+
   // Transform nodes
   const nodes: N8NNode[] = draft.nodes.map((draftNode) => {
     const mapping = getNodeMapping(draftNode.type);

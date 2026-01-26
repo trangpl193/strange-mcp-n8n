@@ -31,6 +31,109 @@ export interface WorkflowUpdateOutput {
 }
 
 /**
+ * Pre-flight validation: Detect and validate update strategy before expensive operations
+ * This prevents token waste from transformations that will fail validation
+ */
+function validateUpdateStrategy(input: WorkflowUpdateInput): void {
+  const hasWorkflow = !!input.workflow;
+  const hasWorkflowJson = !!input.workflow_json;
+  const hasQuickOps = !!(
+    input.activate !== undefined ||
+    input.rename ||
+    input.add_tags?.length ||
+    input.remove_tags?.length
+  );
+
+  const strategyCount = [hasWorkflow, hasWorkflowJson, hasQuickOps].filter(Boolean).length;
+
+  // Error: No strategy provided
+  if (strategyCount === 0) {
+    throw new McpError(
+      McpErrorCode.INVALID_PARAMS,
+      'workflow_update requires at least one update operation',
+      {
+        details: {
+          hint: 'Choose ONE strategy and provide required parameters',
+          decision_tree: [
+            'JUST metadata (name, active, tags)? → Use quick ops: { rename: "...", activate: true }',
+            'ANY nodes (add, remove, modify)? → Use builder pattern instead (builder_start → add_node → commit)',
+            'Have complete validated JSON? → Use workflow_json (expert mode)',
+          ],
+          examples: {
+            quick_ops: { workflow_id: 'abc', rename: 'New Name', activate: true },
+            full_replacement: 'Use builder pattern for node changes, not workflow_update',
+          },
+        },
+      }
+    );
+  }
+
+  // Error: Multiple strategies mixed
+  if (strategyCount > 1) {
+    const providedStrategies = [];
+    if (hasWorkflow) providedStrategies.push('workflow');
+    if (hasWorkflowJson) providedStrategies.push('workflow_json');
+    if (hasQuickOps) providedStrategies.push('quick operations');
+
+    throw new McpError(
+      McpErrorCode.INVALID_PARAMS,
+      `Cannot mix update strategies. Provided: ${providedStrategies.join(', ')}`,
+      {
+        details: {
+          hint: 'Choose ONLY ONE strategy per call',
+          provided_parameters: {
+            workflow: hasWorkflow,
+            workflow_json: hasWorkflowJson,
+            quick_ops: hasQuickOps,
+          },
+        },
+      }
+    );
+  }
+
+  // Strategy-specific validation
+  if (hasWorkflow) {
+    if (!input.workflow.name) {
+      throw new McpError(
+        McpErrorCode.INVALID_PARAMS,
+        'workflow.name is required when using simplified schema strategy',
+        {
+          details: {
+            hint: 'Provide workflow.name in your simplified workflow definition',
+          },
+        }
+      );
+    }
+    if (!input.workflow.steps || input.workflow.steps.length === 0) {
+      throw new McpError(
+        McpErrorCode.INVALID_PARAMS,
+        'workflow.steps cannot be empty when using simplified schema strategy',
+        {
+          details: {
+            hint: 'Provide at least one step in workflow.steps array',
+          },
+        }
+      );
+    }
+  }
+
+  if (hasWorkflowJson) {
+    // Basic validation for workflow_json strategy
+    if (input.workflow_json.name === '') {
+      throw new McpError(
+        McpErrorCode.INVALID_PARAMS,
+        'workflow_json.name cannot be empty string',
+        {
+          details: {
+            hint: 'Either provide a valid name or omit the field to keep existing name',
+          },
+        }
+      );
+    }
+  }
+}
+
+/**
  * Update existing N8N workflow
  *
  * Note: N8N API requires full workflow payload for updates (no PATCH).
@@ -45,6 +148,9 @@ export async function workflowUpdate(
   input: WorkflowUpdateInput
 ): Promise<WorkflowUpdateOutput> {
   const startTime = Date.now();
+
+  // Pre-flight validation: Check strategy before expensive operations
+  validateUpdateStrategy(input);
 
   // Fetch current workflow
   const currentWorkflow = await client.getWorkflow(input.workflow_id);

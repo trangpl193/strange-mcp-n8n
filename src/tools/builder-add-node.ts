@@ -179,6 +179,51 @@ function calculateNextPosition(existingNodes: DraftNode[]): [number, number] {
 }
 
 /**
+ * Apply expression+multipleOutputs format transformation for SWITCH node
+ *
+ * Transforms simplified rules format into N8N UI-compatible expression+multipleOutputs format:
+ * - mode: "expression"
+ * - output: "multipleOutputs"
+ * - rules: { rules: [...] } NOT rules: { values: [...] }
+ * - Each rule has outputKey for naming the branch
+ * - Ensures typeVersion 1 UI compatibility
+ *
+ * Reference: /home/strange/projects/strange-mcp-n8n/src/knowledge/schemas/switch-node.ts
+ * Reference: /home/strange/projects/strange-mcp-n8n/src/knowledge/quirks/switch-node.ts
+ */
+function applySwitchNodeMultipleOutputsFormat(params: Record<string, unknown>): Record<string, unknown> {
+  // If rules exist in "rules.values" format (OLD - incompatible), transform to expression+multipleOutputs
+  if (params.rules && typeof params.rules === 'object') {
+    const rules = params.rules as Record<string, unknown>;
+
+    // Check if using OLD rules.values format
+    if ('values' in rules && Array.isArray(rules.values)) {
+      const rulesArray = rules.values as Array<Record<string, unknown>>;
+
+      // Transform to expression+multipleOutputs format
+      params.mode = 'expression';
+      params.output = 'multipleOutputs';
+      params.rules = {
+        rules: rulesArray.map((rule, index) => ({
+          outputKey: `output_${index}`,  // Generate default outputKey
+          ...rule,
+        })),
+      };
+    }
+  }
+
+  // If no rules, set defaults
+  if (!params.mode) {
+    params.mode = 'expression';
+  }
+  if (!params.output) {
+    params.output = 'multipleOutputs';
+  }
+
+  return params;
+}
+
+/**
  * Apply HYBRID format transformation for IF node
  *
  * Transforms simplified condition format into N8N UI-compatible HYBRID format:
@@ -291,6 +336,12 @@ function buildParameters(
     case 'if':
       // Apply HYBRID format for UI compatibility (typeVersion 2)
       params = applyIfNodeHybridFormat(params);
+      break;
+
+    case 'switch':
+      // Apply expression+multipleOutputs format for UI compatibility (typeVersion 1)
+      // CRITICAL: Must use mode="expression" + output="multipleOutputs" + rules.rules (NOT rules.values!)
+      params = applySwitchNodeMultipleOutputsFormat(params);
       break;
   }
 
