@@ -8,6 +8,7 @@ services:
       context: ..  # Build from parent directory to access both repos
       dockerfile: strange-mcp-n8n/Dockerfile
       args:
+        GITHUB_TOKEN: ${GITHUB_TOKEN}
         GIT_COMMIT: ${GIT_COMMIT:-dev}
         BUILD_DATE: ${BUILD_DATE:-unknown}
     ports:

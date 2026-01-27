@@ -1,5 +1,5 @@
 /**
- * MCP N8N Server using @strange/mcp-core transport
+ * MCP N8N Server using @trangpl193/mcp-core transport
  *
  * Migrated to use standardized transport layer from mcp-core v1.2.0.
  * Eliminates ~100 lines of transport boilerplate code.
@@ -11,7 +11,7 @@
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { createStreamableHttpServer } from '@strange/mcp-core';
+import { createStreamableHttpServer } from '@trangpl193/mcp-core';
 import { N8NClient } from './services/index.js';
 import { initSessionStore, getSessionStoreType } from './services/session-store-factory.js';
 import { initializeSchemas, detectAPI } from './schema/index.js';
@@ -768,7 +768,7 @@ function createMcpServer(client: N8NClient): McpServer {
 }
 
 /**
- * Start MCP N8N Server using @strange/mcp-core transport
+ * Start MCP N8N Server using @trangpl193/mcp-core transport
  *
  * Migrated to use standardized transport layer from mcp-core v1.2.0.
  * Eliminates ~100 lines of transport boilerplate code.

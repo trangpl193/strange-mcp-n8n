@@ -1,4 +1,4 @@
-import { ExecutionMetadata, createMetadataFromStart } from '@strange/mcp-core';
+import { ExecutionMetadata, createMetadataFromStart } from '@trangpl193/mcp-core';
 import { N8NClient } from '../services/index.js';
 
 export interface NodeUpdateInput {

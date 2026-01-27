@@ -5,7 +5,7 @@
  * This is the final step of the builder process.
  */
 
-import { McpError, McpErrorCode } from '@strange/mcp-core';
+import { McpError, McpErrorCode } from '@trangpl193/mcp-core';
 import { getUnifiedSessionStore } from '../services/session-store-factory.js';
 import { getNodeMapping } from '../schemas/node-mappings.js';
 import type { N8NClient } from '../services/n8n-client.js';
@@ -191,6 +191,23 @@ function transformDraftToN8N(session: BuilderSession): {
   // Transform connections
   const connections: N8NConnections = {};
 
+  // Validate: Check for branching nodes (Switch/If) and expected outputs
+  const branchingNodeValidation = validateBranchingNodes(draft.nodes, draft.connections);
+  if (!branchingNodeValidation.valid) {
+    throw new McpError(
+      McpErrorCode.INVALID_PARAMS,
+      `Invalid branching node configuration: ${branchingNodeValidation.error}`,
+      {
+        details: {
+          node: branchingNodeValidation.nodeName,
+          expected: branchingNodeValidation.expected,
+          actual: branchingNodeValidation.actual,
+          hint: 'Switch and If nodes require specific output configurations. Check your builder_connect calls.',
+        },
+      }
+    );
+  }
+
   for (const conn of draft.connections) {
     const fromNode = draft.nodes.find(
       (n) => n.name === conn.from_node || n.id === conn.from_node
@@ -198,8 +215,11 @@ function transformDraftToN8N(session: BuilderSession): {
 
     if (!fromNode) continue;
 
+    // FIX: Initialize with empty array, not [[]]
+    // [[]] creates an empty connection at output 0, causing issues with Switch/If nodes
+    // [] allows proper population of output indices on demand
     if (!connections[fromNode.name]) {
-      connections[fromNode.name] = { main: [[]] };
+      connections[fromNode.name] = { main: [] };
     }
 
     // Ensure array exists for this output index
@@ -243,4 +263,60 @@ function getCredentialType(nodeType: string): string | null {
   };
 
   return credentialMap[nodeType] || null;
+}
+
+/**
+ * Validate branching nodes (Switch/If) have proper output configurations
+ */
+function validateBranchingNodes(
+  nodes: DraftNode[],
+  connections: DraftConnection[]
+): {
+  valid: boolean;
+  error?: string;
+  nodeName?: string;
+  expected?: number;
+  actual?: number;
+} {
+  const branchingNodes = nodes.filter((n) => {
+    const baseType = n.type.replace('n8n-nodes-base.', '');
+    return baseType === 'switch' || baseType === 'if';
+  });
+
+  for (const node of branchingNodes) {
+    const nodeConnections = connections.filter(
+      (c) => c.from_node === node.name || c.from_node === node.id
+    );
+
+    // Determine expected outputs
+    let expectedOutputs = 0;
+    const baseType = node.type.replace('n8n-nodes-base.', '');
+
+    if (baseType === 'if') {
+      expectedOutputs = 2; // Always has true/false outputs
+    } else if (baseType === 'switch') {
+      // Switch has rules + 1 fallback output
+      const rules = node.parameters?.rules?.rules;
+      expectedOutputs = rules ? rules.length + 1 : 2; // Default 2 if no rules
+    }
+
+    // Check if all output indices are covered (at least one connection per output)
+    const usedOutputs = new Set(nodeConnections.map((c) => c.from_output));
+
+    // Warning: Not all outputs are used (optional - not an error)
+    // We only error if output indices are out of range
+    const maxOutputIndex = Math.max(...Array.from(usedOutputs), -1);
+
+    if (maxOutputIndex >= expectedOutputs) {
+      return {
+        valid: false,
+        error: `Output index ${maxOutputIndex} exceeds expected outputs`,
+        nodeName: node.name,
+        expected: expectedOutputs,
+        actual: maxOutputIndex + 1,
+      };
+    }
+  }
+
+  return { valid: true };
 }

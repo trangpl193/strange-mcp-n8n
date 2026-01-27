@@ -4,7 +4,7 @@
  * Creates a new draft workflow session for step-by-step building.
  */
 
-import { createMetadataFromStart } from '@strange/mcp-core';
+import { createMetadataFromStart } from '@trangpl193/mcp-core';
 import { getUnifiedSessionStore } from '../services/session-store-factory.js';
 import type {
   BuilderSession,

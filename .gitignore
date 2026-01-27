@@ -5,3 +5,12 @@ dist/
 .DS_Store
 coverage/
 *.tsbuildinfo
+
+# GitHub Packages auth (contains token)
+.npmrc
+
+# Backup files
+*.backup
+*.backup2
+*.before-refactor
+*.dockerbuild

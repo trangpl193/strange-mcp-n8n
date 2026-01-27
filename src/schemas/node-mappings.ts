@@ -81,7 +81,7 @@ export const NODE_MAPPINGS: Record<string, NodeMapping> = {
 
   switch: {
     n8nType: 'n8n-nodes-base.switch',
-    typeVersion: 1,
+    typeVersion: 3.4,  // Updated to v3.4 - v1 is broken (see docs/SWITCH_NODE_FORMATS.md)
     category: 'logic',
   },
 

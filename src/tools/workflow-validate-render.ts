@@ -1,4 +1,4 @@
-import { ExecutionMetadata, createMetadataFromStart } from '@strange/mcp-core';
+import { ExecutionMetadata, createMetadataFromStart } from '@trangpl193/mcp-core';
 import { N8NClient } from '../services/index.js';
 import type { N8NWorkflow, N8NNode, N8NConnections } from '../types.js';
 import { schema_validate } from '../knowledge/index.js';

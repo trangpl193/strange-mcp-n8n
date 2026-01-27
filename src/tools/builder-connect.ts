@@ -4,7 +4,7 @@
  * Creates a connection between two nodes by name or ID.
  */
 
-import { McpError, McpErrorCode } from '@strange/mcp-core';
+import { McpError, McpErrorCode } from '@trangpl193/mcp-core';
 import { getUnifiedSessionStore } from '../services/session-store-factory.js';
 import type {
   BuilderConnectInput,

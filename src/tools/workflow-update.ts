@@ -1,4 +1,4 @@
-import { ExecutionMetadata, McpError, McpErrorCode, createMetadataFromStart } from '@strange/mcp-core';
+import { ExecutionMetadata, McpError, McpErrorCode, createMetadataFromStart } from '@trangpl193/mcp-core';
 import { N8NClient } from '../services/index.js';
 import { WorkflowTransformer } from '../services/workflow-transformer.js';
 import type { SimplifiedWorkflow } from '../schemas/simplified-workflow.js';

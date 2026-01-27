@@ -27,7 +27,7 @@
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.25.2",
-    "@strange/mcp-core": "git+ssh://git@github.com/trangpl193/strange-mcp-core.git#master",
+    "@trangpl193/mcp-core": "^1.2.1",
     "@types/express": "^5.0.6",
     "express": "^5.2.1",
     "ioredis": "^5.9.2",

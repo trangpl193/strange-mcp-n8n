@@ -1,4 +1,4 @@
-import { McpError, McpErrorCode } from '@strange/mcp-core';
+import { McpError, McpErrorCode } from '@trangpl193/mcp-core';
 import type { SimplifiedWorkflow, SimplifiedStep } from '../schemas/simplified-workflow.js';
 import { getNodeMapping, NODE_MAPPINGS } from '../schemas/node-mappings.js';
 import type { N8NWorkflow, N8NNode, N8NConnections } from '../types.js';

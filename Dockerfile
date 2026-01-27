@@ -13,22 +13,14 @@ RUN apk add --no-cache git openssh-client tzdata
 
 WORKDIR /app
 
-# Build mcp-core first
-COPY strange-mcp-core /tmp/mcp-core
-WORKDIR /tmp/mcp-core
-RUN npm install && npm run build
-
-# Back to app directory
-WORKDIR /app
-
 # Copy package files
-COPY strange-mcp-n8n/package.json strange-mcp-n8n/package-lock.json ./
-RUN npm install --production=false
+COPY strange-mcp-n8n/package.json ./
+COPY strange-mcp-n8n/.npmrc ./
 
-# Replace npm-installed mcp-core with freshly built one
-RUN rm -rf node_modules/@strange && \
-    mkdir -p node_modules/@strange && \
-    cp -r /tmp/mcp-core node_modules/@strange/mcp-core
+# Install dependencies from npm (GitHub Packages)
+ARG GITHUB_TOKEN
+ENV GITHUB_TOKEN=${GITHUB_TOKEN}
+RUN npm install --production=false
 
 # Copy source
 COPY strange-mcp-n8n/tsconfig.json strange-mcp-n8n/tsup.config.ts ./

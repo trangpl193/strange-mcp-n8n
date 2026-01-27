@@ -9,41 +9,46 @@
 import type { Quirk } from '../types.js';
 
 /**
- * Quirk: Switch-node triple format incompatibility
+ * Quirk: Switch-node typeVersion 1 is DEPRECATED and BROKEN
  *
- * CRITICAL: N8N Switch-node accepts three parameter formats via API, but only
- * one format (expression + multipleOutputs) reliably works in UI. Using the wrong
- * format causes workflow to commit successfully but break in UI rendering.
+ * CRITICAL: typeVersion 1 has incompatible parameter formats that cause UI rendering issues.
+ * Modern n8n (v1.20.0+) uses typeVersion 3.4 with completely different structure.
  *
  * Discovery Context:
- * - Issue reported on 2026-01-25
- * - Context Manager Bot workflow created via builder using "rules.values" format
- * - Workflow committed successfully (HTTP 200)
- * - Opening in UI showed blank canvas
- * - Console error: "Could not find property option" / "Could not find workflow"
- * - Test workflows 2, 4, 5 all failed with same issue
- * - UAT workflow (c5oHF5bn1SJARsfd) uses "expression + multipleOutputs" format and works
- * - Investigation revealed schema knowledge documented wrong format
+ * - Issue reported on 2026-01-25: Context Manager Bot workflow blank canvas
+ * - Investigation showed typeVersion 1 formats don't render in modern UI
+ * - User provided working samples from workflow euW7tBP1ddy1W2Zo (2026-01-27)
+ * - Working samples all use typeVersion 3.4 with different parameter structure
+ *
+ * typeVersion 1 Problems:
+ * - expression + multipleOutputs format: uses output="multipleOutputs" + rules.rules[]
+ * - rules mode: uses rules.values[] WITHOUT condition IDs (missing UUIDs)
+ * - UI cannot render without condition IDs, shows blank canvas or errors
+ *
+ * typeVersion 3.4 Solution:
+ * - rules mode: uses rules.values[] WITH condition IDs (UUID required for each)
+ * - expression mode: uses numberOutputs parameter (not output="multipleOutputs")
+ * - Full structure documented in docs/SWITCH_NODE_FORMATS.md
  */
 export const switchNodeTripleFormatQuirk: Quirk = {
-  id: 'switch-node-triple-format',
-  title: 'Switch-node has three formats but only expression+multipleOutputs works in UI',
+  id: 'switch-node-typeversion-1-deprecated',
+  title: 'Switch-node typeVersion 1 is DEPRECATED - Use typeVersion 3.4',
 
   affectedNodes: ['n8n-nodes-base.switch'],
   affectedVersions: {
     nodeTypeVersion: [1],
-    n8nVersion: ['*'], // All versions tested
+    n8nVersion: ['1.20.0+'], // Modern n8n requires v3.4
   },
 
   severity: 'critical',
 
   description:
-    'Switch-node (typeVersion 1) accepts three different parameter formats via API: ' +
-    '"rules" (with rules.values), "expression" (simple string), and "expression + multipleOutputs" ' +
-    '(with rules.rules). N8N API accepts ALL formats without error (returns HTTP 200), but N8N UI ' +
-    'only renders "expression + multipleOutputs" format correctly. Using "rules.values" format ' +
-    'causes "Could not find property option" / "Could not find workflow" error and results in ' +
-    'blank workflow canvas in UI.',
+    'Switch-node typeVersion 1 is DEPRECATED in modern n8n (v1.20.0+). ' +
+    'typeVersion 3.4 is required for proper UI rendering. ' +
+    'typeVersion 1 formats (expression+multipleOutputs with rules.rules[], or rules.values without condition IDs) ' +
+    'cause "Could not find property option" errors and blank workflow canvas. ' +
+    'MCP tools must use typeVersion 3.4 with proper format: rules mode requires rules.values[] with UUID for each condition, ' +
+    'expression mode requires numberOutputs parameter (not output="multipleOutputs").',
 
   symptoms: [
     'Workflow commits successfully (HTTP 200 response)',
@@ -56,20 +61,21 @@ export const switchNodeTripleFormatQuirk: Quirk = {
   ],
 
   rootCause:
-    'N8N UI code expects specific structure for Switch-node depending on mode: ' +
-    '1. "rules" mode with rules.values (OLD format) - NOT UI-compatible despite being in schema ' +
-    '2. "expression" mode with simple output string (LIMITED - works but only for simple routing) ' +
-    '3. "expression" mode with output="multipleOutputs" + rules.rules + outputKey (CORRECT format) ' +
-    'Schema documentation and builder were using format #1 which N8N API accepts but UI cannot render. ' +
-    'The correct format for builder usage is #3: mode="expression", output="multipleOutputs", ' +
-    'rules.rules (not rules.values!), with outputKey for each branch. This is the format UAT workflows use.',
+    'N8N updated Switch-node from typeVersion 1 to 3.4 with breaking parameter structure changes: ' +
+    '- typeVersion 1 rules.values[] did not require condition IDs → UI cannot render ' +
+    '- typeVersion 1 expression mode used output="multipleOutputs" → deprecated ' +
+    '- typeVersion 3.4 rules.values[] REQUIRES unique UUID for each condition → UI renders correctly ' +
+    '- typeVersion 3.4 expression mode uses numberOutputs parameter → new standard ' +
+    'MCP tool default was typeVersion 1 causing all generated workflows to break. ' +
+    'Fix: Update node-mappings.ts to typeVersion 3.4 and builder to generate correct format with condition IDs.',
 
   workaround:
-    'Always use "expression + multipleOutputs" format for Switch-node with multiple conditional outputs. ' +
-    'Structure must be: { mode: "expression", output: "multipleOutputs", rules: { rules: [ { outputKey: "...", ' +
-    'conditions: { combinator: "and/or", conditions: [...] } } ] } }. Note: rules.rules NOT rules.values! ' +
-    'Builder must transform simplified input to this structure. See src/knowledge/schemas/switch-node.ts ' +
-    'format "expression-multipleOutputs" for complete specification.',
+    'ALWAYS use typeVersion 3.4 for Switch nodes. Two valid formats: ' +
+    '1. Rules mode: { rules: { values: [...] } } where each condition has unique id (UUID). ' +
+    '   Include conditions.options with version: 3. ' +
+    '2. Expression mode: { mode: "expression", numberOutputs: <number> }. ' +
+    'MCP tools automatically generate correct format via applySwitchNodeV3Format(). ' +
+    'See docs/SWITCH_NODE_FORMATS.md and src/knowledge/schemas/switch-node-v3.ts for complete specification.',
 
   autoFixAvailable: true,
 

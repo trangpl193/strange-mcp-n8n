@@ -5,7 +5,7 @@
  * by the schema adapter based on target API detection.
  */
 
-import type { CanonicalToolDefinition } from '@strange/mcp-core';
+import type { CanonicalToolDefinition } from '@trangpl193/mcp-core';
 
 /**
  * workflow_discover - Ultra-lightweight workflow discovery (Tier 1)

@@ -13,7 +13,7 @@ import {
   detectTargetAPI,
   type TargetAPI,
   type FlatteningHint,
-} from '@strange/mcp-core';
+} from '@trangpl193/mcp-core';
 import { allTools } from './tool-definitions.js';
 
 // Singleton transformer with both adapters registered

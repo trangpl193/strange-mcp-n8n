@@ -4,7 +4,7 @@
  * Cleans up the session and removes the draft.
  */
 
-import { McpError, McpErrorCode } from '@strange/mcp-core';
+import { McpError, McpErrorCode } from '@trangpl193/mcp-core';
 import { getUnifiedSessionStore } from '../services/session-store-factory.js';
 import type {
   BuilderDiscardInput,

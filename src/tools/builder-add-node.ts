@@ -5,7 +5,7 @@
  * Auto-generates position if not provided.
  */
 
-import { McpError, McpErrorCode } from '@strange/mcp-core';
+import { McpError, McpErrorCode } from '@trangpl193/mcp-core';
 import { randomUUID } from 'crypto';
 import { getUnifiedSessionStore } from '../services/session-store-factory.js';
 import { getNodeMapping, getDefaultNodeName } from '../schemas/node-mappings.js';
@@ -179,45 +179,79 @@ function calculateNextPosition(existingNodes: DraftNode[]): [number, number] {
 }
 
 /**
- * Apply expression+multipleOutputs format transformation for SWITCH node
+ * Apply typeVersion 3.4 format transformation for SWITCH node
  *
- * Transforms simplified rules format into N8N UI-compatible expression+multipleOutputs format:
- * - mode: "expression"
- * - output: "multipleOutputs"
- * - rules: { rules: [...] } NOT rules: { values: [...] }
- * - Each rule has outputKey for naming the branch
- * - Ensures typeVersion 1 UI compatibility
+ * typeVersion 3.4 has TWO valid modes:
+ * 1. Rules mode: rules.values[] with conditions (each condition MUST have unique id)
+ * 2. Expression mode: mode="expression" + numberOutputs (NOT output="multipleOutputs")
  *
+ * Reference: /home/strange/projects/strange-mcp-n8n/docs/SWITCH_NODE_FORMATS.md
  * Reference: /home/strange/projects/strange-mcp-n8n/src/knowledge/schemas/switch-node.ts
- * Reference: /home/strange/projects/strange-mcp-n8n/src/knowledge/quirks/switch-node.ts
  */
-function applySwitchNodeMultipleOutputsFormat(params: Record<string, unknown>): Record<string, unknown> {
-  // If rules exist in "rules.values" format (OLD - incompatible), transform to expression+multipleOutputs
+function applySwitchNodeV3Format(params: Record<string, unknown>): Record<string, unknown> {
+  // Check if expression mode is explicitly requested
+  const isExpressionMode = params.mode === 'expression';
+
+  if (isExpressionMode) {
+    // EXPRESSION MODE (v3.4): Use numberOutputs parameter
+    // Default to 2 outputs if not specified
+    if (!params.numberOutputs) {
+      params.numberOutputs = 2;
+    }
+    // Remove old v1 parameters if present
+    delete params.output;
+    delete params.rules;
+
+    return params;
+  }
+
+  // RULES MODE (v3.4): Use rules.values[] with condition IDs
   if (params.rules && typeof params.rules === 'object') {
     const rules = params.rules as Record<string, unknown>;
 
-    // Check if using OLD rules.values format
+    // Check if using rules.values format
     if ('values' in rules && Array.isArray(rules.values)) {
       const rulesArray = rules.values as Array<Record<string, unknown>>;
 
-      // Transform to expression+multipleOutputs format
-      params.mode = 'expression';
-      params.output = 'multipleOutputs';
-      params.rules = {
-        rules: rulesArray.map((rule, index) => ({
-          outputKey: `output_${index}`,  // Generate default outputKey
-          ...rule,
-        })),
-      };
+      // Ensure each rule has proper structure with condition IDs
+      rulesArray.forEach((rule) => {
+        if (rule.conditions && typeof rule.conditions === 'object') {
+          const conditions = rule.conditions as Record<string, unknown>;
+
+          // Add options wrapper if missing
+          if (!conditions.options) {
+            conditions.options = {
+              caseSensitive: true,
+              leftValue: '',
+              typeValidation: 'strict',
+              version: 3,
+            };
+          }
+
+          // Ensure each condition has unique ID
+          if (conditions.conditions && Array.isArray(conditions.conditions)) {
+            const conditionsArray = conditions.conditions as Array<Record<string, unknown>>;
+            conditionsArray.forEach((condition) => {
+              if (!condition.id) {
+                condition.id = randomUUID();  // Generate UUID for each condition
+              }
+            });
+          }
+
+          // Ensure combinator exists
+          if (!conditions.combinator) {
+            conditions.combinator = 'and';
+          }
+        }
+      });
+
+      params.rules = { values: rulesArray };
     }
   }
 
-  // If no rules, set defaults
-  if (!params.mode) {
-    params.mode = 'expression';
-  }
-  if (!params.output) {
-    params.output = 'multipleOutputs';
+  // Add root-level options if missing
+  if (!params.options) {
+    params.options = {};
   }
 
   return params;
@@ -339,9 +373,9 @@ function buildParameters(
       break;
 
     case 'switch':
-      // Apply expression+multipleOutputs format for UI compatibility (typeVersion 1)
-      // CRITICAL: Must use mode="expression" + output="multipleOutputs" + rules.rules (NOT rules.values!)
-      params = applySwitchNodeMultipleOutputsFormat(params);
+      // Apply typeVersion 3.4 format (rules mode with condition IDs or expression mode with numberOutputs)
+      // See docs/SWITCH_NODE_FORMATS.md for format requirements
+      params = applySwitchNodeV3Format(params);
       break;
   }
 

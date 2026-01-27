@@ -5,7 +5,7 @@
  * Returns errors (blocking) and warnings (non-blocking)
  */
 
-import { McpError, McpErrorCode } from '@strange/mcp-core';
+import { McpError, McpErrorCode } from '@trangpl193/mcp-core';
 import { getUnifiedSessionStore } from '../services/session-store-factory.js';
 import type { N8NClient } from '../services/n8n-client.js';
 import { schema_validate, quirks_check } from '../knowledge/index.js';

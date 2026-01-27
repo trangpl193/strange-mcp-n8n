@@ -1,4 +1,4 @@
-import { McpError, McpErrorCode, errorContext } from '@strange/mcp-core';
+import { McpError, McpErrorCode, errorContext } from '@trangpl193/mcp-core';
 import type {
   N8NWorkflow,
   N8NNode,

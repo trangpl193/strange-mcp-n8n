@@ -1,4 +1,4 @@
-import { ExecutionMetadata, createMetadataFromStart, createCursor, createInitialCursor, TransparentCursor } from '@strange/mcp-core';
+import { ExecutionMetadata, createMetadataFromStart, createCursor, createInitialCursor, TransparentCursor } from '@trangpl193/mcp-core';
 import { N8NClient } from '../services/index.js';
 import type { N8NWorkflow } from '../types.js';
 

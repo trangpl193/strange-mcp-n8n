@@ -1,4 +1,4 @@
-import { createMetadataFromStart, ExecutionMetadata, McpError, McpErrorCode } from '@strange/mcp-core';
+import { createMetadataFromStart, ExecutionMetadata, McpError, McpErrorCode } from '@trangpl193/mcp-core';
 import { N8NClient } from '../services/index.js';
 import { WorkflowTransformer } from '../services/workflow-transformer.js';
 import type { SimplifiedWorkflow } from '../schemas/simplified-workflow.js';
@@ -95,10 +95,26 @@ export async function workflowCreate(
         workflow_id: response.id,
       });
 
+      // Check for webhook nodes and add warning
+      const hasWebhookNode = input.workflow.steps.some(step =>
+        step.type.toLowerCase() === 'webhook'
+      );
+
+      const warnings = [...validation.warnings];
+      if (hasWebhookNode) {
+        warnings.push(
+          '⚠️ WEBHOOK NODE DETECTED: You MUST open this workflow in n8n UI and save it to generate webhookId. ' +
+          `Open: ${client.baseUrl.replace('/api/v1', '')}/workflow/${response.id} ` +
+          'Then make any change (e.g., move node) and save (Ctrl+S). ' +
+          'Without this step, webhook endpoints will return 404. ' +
+          'See docs/WEBHOOK_BEHAVIOR.md for details.'
+        );
+      }
+
       validationResult = {
         valid: validation.valid,
         errors: validation.errors,
-        warnings: validation.warnings,
+        warnings,
       };
     } catch (validationError) {
       // Validation failed - include error in warnings
