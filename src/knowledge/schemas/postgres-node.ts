@@ -79,42 +79,25 @@ export const postgresNodeSchema: NodeSchema = {
 
         complete: {
           operation: 'executeQuery',
-          query: `SELECT
-  s.id, s.title, s.status,
-  s.started_at, s.last_activity,
-  EXTRACT(DAY FROM now() - s.last_activity) as days_inactive,
-  COUNT(DISTINCT c.id) FILTER (WHERE c.status = 'active') as active_contexts,
-  COUNT(DISTINCT c.id) FILTER (WHERE c.context_type = 'blocker' AND c.status = 'active') as blockers
-FROM agent.sessions s
-LEFT JOIN agent.session_contexts c ON s.id = c.session_id
-WHERE s.project_id = $1
-  AND s.status = 'active'
-GROUP BY s.id, s.title, s.status, s.started_at, s.last_activity
-ORDER BY s.last_activity DESC
-LIMIT $2`,
-          additionalFields: {
-            queryBatching: 'single',
-            connectionTimeout: 5000,
-          },
-        },
-
-        with_cte: {
-          operation: 'executeQuery',
           query: `WITH session_info AS (
   SELECT id, title, started_at, last_activity
   FROM agent.sessions
-  WHERE id = $1
-    AND project_id = $2
+  WHERE id = $1 AND project_id = $2
 )
 SELECT
   c.context_type, c.title, c.content,
-  c.priority, c.created_at
+  c.priority, c.created_at,
+  COUNT(DISTINCT c.id) FILTER (WHERE c.status = 'active') as active_contexts,
+  COUNT(DISTINCT c.id) FILTER (WHERE c.context_type = 'blocker') as blockers
 FROM agent.session_contexts c
 WHERE c.session_id = $1
   AND c.status = 'active'
-ORDER BY c.created_at DESC`,
+GROUP BY c.context_type, c.title, c.content, c.priority, c.created_at
+ORDER BY c.created_at DESC
+LIMIT $3`,
           additionalFields: {
             queryBatching: 'single',
+            connectionTimeout: 5000,
           },
         },
       },
@@ -268,6 +251,13 @@ ORDER BY c.created_at DESC`,
           updateKey: 'id',
           columns: 'name,email',
         },
+        complete: {
+          operation: 'update',
+          schema: 'public',
+          table: 'users',
+          updateKey: 'id',
+          columns: 'name,email,updated_at',
+        },
       },
 
       notes: 'Update operation modifies existing rows. updateKey defines which column to match on.',
@@ -319,6 +309,12 @@ ORDER BY c.created_at DESC`,
           table: 'users',
           deleteKey: 'id',
         },
+        complete: {
+          operation: 'delete',
+          schema: 'public',
+          table: 'users',
+          deleteKey: 'id',
+        },
       },
 
       notes: 'Delete operation removes rows. Use with caution. For complex deletes, use executeQuery with DELETE statement.',
@@ -340,10 +336,9 @@ ORDER BY c.created_at DESC`,
   ],
 
   metadata: {
-    source: 'n8n_documentation_and_real_world_usage',
+    source: 'documentation',
     validatedDate: '2026-01-25T04:57:00+07:00',
     validatedBy: 'context_manager_workflows',
     n8nVersion: '1.76.1',
-    notes: 'Schema based on Context Manager Bot and Daily Cleanup workflows. Focus on executeQuery (90% usage).',
   },
 };

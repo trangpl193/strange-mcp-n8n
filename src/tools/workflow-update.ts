@@ -52,7 +52,7 @@ function validateUpdateStrategy(input: WorkflowUpdateInput): void {
       McpErrorCode.INVALID_PARAMS,
       'workflow_update requires at least one update operation',
       {
-        details: {
+        data: {
           hint: 'Choose ONE strategy and provide required parameters',
           decision_tree: [
             'JUST metadata (name, active, tags)? → Use quick ops: { rename: "...", activate: true }',
@@ -79,7 +79,7 @@ function validateUpdateStrategy(input: WorkflowUpdateInput): void {
       McpErrorCode.INVALID_PARAMS,
       `Cannot mix update strategies. Provided: ${providedStrategies.join(', ')}`,
       {
-        details: {
+        data: {
           hint: 'Choose ONLY ONE strategy per call',
           provided_parameters: {
             workflow: hasWorkflow,
@@ -98,7 +98,7 @@ function validateUpdateStrategy(input: WorkflowUpdateInput): void {
         McpErrorCode.INVALID_PARAMS,
         'workflow.name is required when using simplified schema strategy',
         {
-          details: {
+          data: {
             hint: 'Provide workflow.name in your simplified workflow definition',
           },
         }
@@ -109,7 +109,7 @@ function validateUpdateStrategy(input: WorkflowUpdateInput): void {
         McpErrorCode.INVALID_PARAMS,
         'workflow.steps cannot be empty when using simplified schema strategy',
         {
-          details: {
+          data: {
             hint: 'Provide at least one step in workflow.steps array',
           },
         }
@@ -124,7 +124,7 @@ function validateUpdateStrategy(input: WorkflowUpdateInput): void {
         McpErrorCode.INVALID_PARAMS,
         'workflow_json.name cannot be empty string',
         {
-          details: {
+          data: {
             hint: 'Either provide a valid name or omit the field to keep existing name',
           },
         }
@@ -229,7 +229,7 @@ export async function workflowUpdate(
       McpErrorCode.INVALID_PARAMS,
       'Workflow update must include name, nodes, and connections',
       {
-        details: {
+        data: {
           hint: 'N8N API requires full workflow payload. Provide workflow, workflow_json, or use quick operations.',
         },
       }

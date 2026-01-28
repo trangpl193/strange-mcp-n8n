@@ -160,7 +160,7 @@ describe('schemas/node-mappings', () => {
 
       expect(mapping).toEqual({
         n8nType: 'n8n-nodes-base.if',
-        typeVersion: 1,
+        typeVersion: 2,
         category: 'logic',
       });
     });
@@ -170,7 +170,7 @@ describe('schemas/node-mappings', () => {
 
       expect(mapping).toEqual({
         n8nType: 'n8n-nodes-base.switch',
-        typeVersion: 1,
+        typeVersion: 3.4,
         category: 'logic',
       });
     });
@@ -481,10 +481,11 @@ describe('schemas/node-mappings', () => {
       }
     });
 
-    test('type versions should be positive integers', () => {
+    test('type versions should be positive numbers', () => {
       for (const [key, mapping] of Object.entries(NODE_MAPPINGS)) {
         expect(mapping.typeVersion).toBeGreaterThan(0);
-        expect(Number.isInteger(mapping.typeVersion)).toBe(true);
+        // Note: Switch node uses 3.4 (float) for UI compatibility
+        expect(typeof mapping.typeVersion).toBe('number');
       }
     });
 

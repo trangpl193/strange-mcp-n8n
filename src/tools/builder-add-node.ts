@@ -29,7 +29,7 @@ export async function builderAddNode(
       McpErrorCode.INVALID_PARAMS,
       `Builder session '${input.session_id}' not found or expired`,
       {
-        details: {
+        data: {
           recovery_hint: 'Call builder_list to find active sessions, or builder_start to create new one',
         },
       }
@@ -41,7 +41,7 @@ export async function builderAddNode(
       McpErrorCode.INVALID_PARAMS,
       `Builder session '${input.session_id}' has expired`,
       {
-        details: {
+        data: {
           recovery_hint: 'Call builder_resume to recreate session from expired data',
           expired_at: session.expires_at,
         },
@@ -56,7 +56,7 @@ export async function builderAddNode(
       McpErrorCode.INVALID_PARAMS,
       `Unknown node type '${input.node.type}'`,
       {
-        details: {
+        data: {
           supported_types: ['webhook', 'schedule', 'manual', 'http', 'postgres', 'discord', 'code', 'if', 'switch', 'merge', 'set', 'respond'],
         },
       }
@@ -89,6 +89,10 @@ export async function builderAddNode(
     parameters,
     position,
     credential: input.node.credential,
+    metadata: {
+      expected_outputs: calculateExpectedOutputs(input.node.type, parameters),
+      node_category: getNodeCategory(input.node.type)
+    }
   };
 
   // Phase 3A Week 3: Validate parameters against knowledge layer schemas
@@ -133,7 +137,7 @@ export async function builderAddNode(
   session.operations_log.push({
     operation: 'add_node',
     timestamp: new Date().toISOString(),
-    details: {
+    data: {
       node_id: nodeId,
       node_name: nodeName,
       node_type: input.node.type,
@@ -177,6 +181,47 @@ function calculateNextPosition(existingNodes: DraftNode[]): [number, number] {
 
   return [maxX + BUILDER_CONSTANTS.DEFAULT_NODE_SPACING, Math.round(avgY)];
 }
+
+/**
+ * Calculate expected outputs for a node type
+ */
+function calculateExpectedOutputs(nodeType: string, parameters: any): number {
+  const baseType = nodeType.replace('n8n-nodes-base.', '');
+
+  if (baseType === 'switch') {
+    // typeVersion 3.4 rules mode: outputs = rules count
+    const rulesCount = parameters?.rules?.values?.length || 0;
+    return rulesCount > 0 ? rulesCount : 2; // Default 2 if no rules
+  }
+
+  if (baseType === 'if') {
+    return 2; // Always true/false outputs
+  }
+
+  if (baseType === 'filter') {
+    return 2; // Pass/fail outputs
+  }
+
+  return 1; // Default single output
+}
+
+/**
+ * Get node category
+ */
+function getNodeCategory(nodeType: string): 'trigger' | 'action' | 'branching' {
+  const baseType = nodeType.replace('n8n-nodes-base.', '');
+
+  if (['webhook', 'schedule', 'manual'].includes(baseType)) {
+    return 'trigger';
+  }
+
+  if (['switch', 'if', 'filter'].includes(baseType)) {
+    return 'branching';
+  }
+
+  return 'action';
+}
+
 
 /**
  * Apply typeVersion 3.4 format transformation for SWITCH node

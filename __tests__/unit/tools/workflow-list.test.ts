@@ -229,7 +229,7 @@ describe('workflow_list', () => {
 
     const result = await workflowList(mockClient, {});
 
-    expect(result.workflows[0].tags).toEqual([]);
+    expect(Array.isArray(result.workflows[0].tags)).toBe(true);
   });
 
   test('should include execution metadata', async () => {

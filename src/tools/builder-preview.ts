@@ -55,7 +55,7 @@ export async function builderPreview(
       McpErrorCode.INVALID_PARAMS,
       `Builder session '${input.session_id}' not found`,
       {
-        details: {
+        data: {
           recovery_hint: 'Call builder_list to find active sessions',
         },
       }
@@ -67,7 +67,7 @@ export async function builderPreview(
       McpErrorCode.INVALID_PARAMS,
       `Builder session '${input.session_id}' has expired`,
       {
-        details: {
+        data: {
           recovery_hint: 'Call builder_resume to recreate session',
         },
       }

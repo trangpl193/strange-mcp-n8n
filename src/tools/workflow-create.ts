@@ -46,7 +46,7 @@ export async function workflowCreate(
       McpErrorCode.INVALID_PARAMS,
       'Workflow must have at least one trigger node (webhook, schedule, or manual)',
       {
-        details: {
+        data: {
           availableTriggers: triggerTypes,
           providedSteps: input.workflow.steps.map(s => s.type),
         },
@@ -104,7 +104,7 @@ export async function workflowCreate(
       if (hasWebhookNode) {
         warnings.push(
           '⚠️ WEBHOOK NODE DETECTED: You MUST open this workflow in n8n UI and save it to generate webhookId. ' +
-          `Open: ${client.baseUrl.replace('/api/v1', '')}/workflow/${response.id} ` +
+          `Open: ${client.getBaseUrl().replace('/api/v1', '')}/workflow/${response.id} ` +
           'Then make any change (e.g., move node) and save (Ctrl+S). ' +
           'Without this step, webhook endpoints will return 404. ' +
           'See docs/WEBHOOK_BEHAVIOR.md for details.'

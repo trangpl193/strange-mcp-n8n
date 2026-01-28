@@ -285,68 +285,6 @@ export const switchNodeV3Schema: NodeSchema = {
       ],
     },
 
-    {
-      name: 'expression-v3',
-      status: 'recommended',
-      uiCompatible: true,
-      apiCompatible: true,
-
-      structure: {
-        mode: {
-          type: 'string',
-          value: 'expression',
-          description: 'Expression-based routing mode',
-        },
-        numberOutputs: {
-          type: 'number',
-          description: 'Number of output branches (2, 3, 4, etc.)',
-          minimum: 2,
-          default: 2,
-        },
-      },
-
-      example: {
-        minimal: {
-          mode: 'expression',
-          numberOutputs: 2,
-        },
-
-        complete: {
-          mode: 'expression',
-          numberOutputs: 3,
-        },
-      },
-
-      notes:
-        'typeVersion 3.4 expression mode uses numberOutputs parameter (not output="multipleOutputs"). ' +
-        'Users configure routing expressions in n8n UI after workflow creation. ' +
-        'More flexible than rules mode but requires JavaScript knowledge.',
-
-      editorRequirements: [
-        {
-          id: 'expression_mode_required',
-          name: 'Mode Must Be "expression"',
-          path: 'mode',
-          checkType: 'value',
-          expected: { value: 'expression' },
-          errorMessage: 'mode must be "expression" for expression routing',
-          severity: 'error',
-          rationale: 'Expression routing requires explicit mode declaration',
-          fix: 'Set mode: "expression"',
-        },
-        {
-          id: 'numberOutputs_required',
-          name: 'numberOutputs Required',
-          path: 'numberOutputs',
-          checkType: 'exists',
-          expected: { type: 'number', minimum: 2 },
-          errorMessage: 'numberOutputs parameter required for typeVersion 3.4 expression mode',
-          severity: 'error',
-          rationale: 'typeVersion 3.4 uses numberOutputs (not output="multipleOutputs")',
-          fix: 'Add numberOutputs: <number> (e.g., 2 for two outputs)',
-        },
-      ],
-    },
   ],
 
   metadata: {

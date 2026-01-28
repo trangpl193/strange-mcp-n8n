@@ -98,6 +98,13 @@ export class N8NClient {
   }
 
   /**
+   * Get the base URL for the N8N instance (for UI links)
+   */
+  getBaseUrl(): string {
+    return this.baseUrl;
+  }
+
+  /**
    * Make HTTP request to N8N API
    */
   private async request<T>(
@@ -141,7 +148,7 @@ export class N8NClient {
           McpErrorCode.TOOL_EXECUTION_FAILED,
           `N8N API error: ${errorData.message}`,
           {
-            details: {
+            data: {
               context: errorContext()
                 .location('N8NClient.request')
                 .operation(`${method} ${path}`)
@@ -169,7 +176,7 @@ export class N8NClient {
             McpErrorCode.TIMEOUT,
             `Request to N8N API timed out after ${this.timeout}ms`,
             {
-              details: {
+              data: {
                 context: errorContext()
                   .location('N8NClient.request')
                   .operation(`${method} ${path}`)
@@ -186,7 +193,7 @@ export class N8NClient {
           McpErrorCode.CONNECTION_FAILED,
           `Network error: ${error.message}`,
           {
-            details: {
+            data: {
               context: errorContext()
                 .location('N8NClient.request')
                 .operation(`${method} ${path}`)
@@ -203,7 +210,7 @@ export class N8NClient {
         McpErrorCode.INTERNAL_ERROR,
         'Unknown error occurred',
         {
-          details: {
+          data: {
             context: errorContext()
               .location('N8NClient.request')
               .operation(`${method} ${path}`)
@@ -404,7 +411,7 @@ export class N8NClient {
         McpErrorCode.INVALID_PARAMS,
         `Node "${nodeIdentifier}" not found in workflow "${workflow.name}"`,
         {
-          details: {
+          data: {
             context: errorContext()
               .location('N8NClient.getNode')
               .operation(`find node ${nodeIdentifier}`)
@@ -445,7 +452,7 @@ export class N8NClient {
         McpErrorCode.INVALID_PARAMS,
         `Node "${nodeIdentifier}" not found in workflow "${workflow.name}"`,
         {
-          details: {
+          data: {
             context: errorContext()
               .location('N8NClient.updateNode')
               .operation(`find node ${nodeIdentifier}`)

@@ -104,11 +104,6 @@ export const mergeNodeSchema: NodeSchema = {
 
         complete: {
           mode: 'combine',
-          combinationMode: 'multiplex',
-        },
-
-        merge_by_position: {
-          mode: 'combine',
           combinationMode: 'mergeByPosition',
         },
       },
@@ -172,13 +167,6 @@ export const mergeNodeSchema: NodeSchema = {
 
         complete: {
           mode: 'mergeByKey',
-          propertyName1: 'id',
-          propertyName2: 'user_id',
-          outputDataFrom: 'both',
-        },
-
-        database_join: {
-          mode: 'mergeByKey',
           propertyName1: 'email',
           propertyName2: 'email',
           outputDataFrom: 'both',
@@ -229,11 +217,9 @@ export const mergeNodeSchema: NodeSchema = {
   ],
 
   metadata: {
-    source: 'n8n_documentation_and_real_world_usage',
+    source: 'documentation',
     validatedDate: '2026-01-25T12:47:00+07:00',
     validatedBy: 'workflow_analysis',
     n8nVersion: '1.76.1',
-    notes:
-      'Critical for data pipeline workflows. Usage: append (40%), combine (25%), mergeByKey (35%).',
   },
 };

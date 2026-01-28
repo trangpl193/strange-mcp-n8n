@@ -46,6 +46,10 @@ export interface DraftNode {
   parameters: Record<string, unknown>;
   position: [number, number];
   credential?: string;
+  metadata?: {
+    expected_outputs: number;
+    node_category: 'trigger' | 'action' | 'branching';
+  };
 }
 
 export interface DraftConnection {
@@ -58,7 +62,7 @@ export interface DraftConnection {
 export interface OperationLogEntry {
   operation: string;
   timestamp: string;
-  details: Record<string, unknown>;
+  data: Record<string, unknown>;
 }
 
 // ============================================
@@ -120,8 +124,14 @@ export interface BuilderConnectOutput {
   connection: {
     from: string;
     to: string;
+    from_output: number;
+    to_input: number;
   };
   connections_count: number;
+  validation: {
+    output_index_valid: boolean;
+    validated_against_metadata: boolean;
+  };
 }
 
 // builder_commit

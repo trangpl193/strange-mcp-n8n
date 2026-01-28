@@ -302,10 +302,10 @@ describe('Builder + Knowledge Layer Integration', () => {
       expect(preview.summary.nodes_count).toBe(3);
 
       // Should detect If-node quirk but no schema errors
-      const quirkWarnings = preview.warnings.filter((w) => w.code === 'CRITICAL_QUIRK');
+      const quirkWarnings = preview.warnings.filter((w: any) => w.code === 'CRITICAL_QUIRK');
       expect(quirkWarnings.length).toBeGreaterThan(0);
 
-      const schemaErrors = preview.errors.filter((e) => e.code === 'SCHEMA_VALIDATION_FAILED');
+      const schemaErrors = preview.errors.filter((e: any) => e.code === 'SCHEMA_VALIDATION_FAILED');
       expect(schemaErrors.length).toBe(0);
     });
 
@@ -338,7 +338,7 @@ describe('Builder + Knowledge Layer Integration', () => {
       expect(preview.summary.nodes_count).toBe(2);
 
       // No schema warnings for nodes without knowledge layer schemas
-      const schemaWarnings = preview.warnings.filter((w) => w.code === 'SCHEMA_WARNING');
+      const schemaWarnings = preview.warnings.filter((w: any) => w.code === 'SCHEMA_WARNING');
       expect(schemaWarnings.length).toBe(0);
     });
   });
@@ -420,11 +420,11 @@ describe('Builder + Knowledge Layer Integration', () => {
       expect(preview.summary.trigger_type).toBe('webhook');
 
       // Should have If-node quirk warning
-      const quirkWarnings = preview.warnings.filter((w) => w.code === 'CRITICAL_QUIRK');
+      const quirkWarnings = preview.warnings.filter((w: any) => w.code === 'CRITICAL_QUIRK');
       expect(quirkWarnings.length).toBeGreaterThan(0);
 
       // No schema validation errors
-      const schemaErrors = preview.errors.filter((e) => e.code === 'SCHEMA_VALIDATION_FAILED');
+      const schemaErrors = preview.errors.filter((e: any) => e.code === 'SCHEMA_VALIDATION_FAILED');
       expect(schemaErrors.length).toBe(0);
     });
   });

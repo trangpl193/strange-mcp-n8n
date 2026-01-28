@@ -152,7 +152,7 @@ async function validateNode(
             node_name: node.name,
             error: issue.errorMessage,
             field: issue.path,
-            details: issue.fix,
+            data: issue.fix,
           });
         }
       }
@@ -190,7 +190,7 @@ function validateConnections(
         node_id: '',
         node_name: sourceName,
         error: `Connection source node "${sourceName}" not found in workflow`,
-        details: 'Connection references non-existent node',
+        data: 'Connection references non-existent node',
       });
       return;
     }
@@ -202,7 +202,7 @@ function validateConnections(
         node_name: sourceName,
         error: `Node "${sourceName}" has invalid connections.main structure`,
         field: 'connections.main',
-        details: 'Must be an array of output port arrays',
+        data: 'Must be an array of output port arrays',
       });
       return;
     }
@@ -233,7 +233,7 @@ function validateConnections(
             node_id: '',
             node_name: sourceName,
             error: `Connection target node "${target.node}" not found in workflow`,
-            details: `Source: "${sourceName}" → Target: "${target.node}"`,
+            data: `Source: "${sourceName}" → Target: "${target.node}"`,
           });
         }
 
@@ -261,7 +261,7 @@ function validateConnections(
             node_id: node.id,
             node_name: node.name,
             error: `IF node "${node.name}" has only ${outputCount} output(s), expected 2`,
-            details: 'IF nodes require 2 outputs (true/false branches)',
+            data: 'IF nodes require 2 outputs (true/false branches)',
           });
         }
 

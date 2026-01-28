@@ -178,7 +178,7 @@ export class InMemorySessionStore implements SessionStore {
         {
           operation: 'resumed',
           timestamp: new Date().toISOString(),
-          details: { previous_session_id: sessionId },
+          data: { previous_session_id: sessionId },
         },
       ],
     };

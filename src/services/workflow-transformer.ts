@@ -160,7 +160,7 @@ export class WorkflowTransformer {
       throw new McpError(
         McpErrorCode.INVALID_PARAMS,
         `Unknown node type: ${step.type}`,
-        { details: { availableTypes: Object.keys(NODE_MAPPINGS) } }
+        { data: { availableTypes: Object.keys(NODE_MAPPINGS) } }
       );
     }
 
@@ -225,7 +225,7 @@ export class WorkflowTransformer {
         McpErrorCode.INVALID_PARAMS,
         `Credential not found: ${credentialName}`,
         {
-          details: {
+          data: {
             nodeType,
             availableCredentials: Array.from(this.credentialMap.keys()),
             hint: 'Ensure credential name matches exactly or provide credential ID mapping',

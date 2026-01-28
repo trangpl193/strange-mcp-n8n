@@ -17,7 +17,7 @@ WORKDIR /app
 COPY strange-mcp-n8n/package.json ./
 COPY strange-mcp-n8n/.npmrc ./
 
-# Install dependencies from npm (GitHub Packages)
+# Install dependencies from GitHub Packages
 ARG GITHUB_TOKEN
 ENV GITHUB_TOKEN=${GITHUB_TOKEN}
 RUN npm install --production=false

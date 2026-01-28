@@ -520,7 +520,7 @@ export class N8NMCPServer {
                 text: JSON.stringify(
                   {
                     error: error.message,
-                    details: (error as any).details || {},
+                    data: (error as any).details || {},
                   },
                   null,
                   2

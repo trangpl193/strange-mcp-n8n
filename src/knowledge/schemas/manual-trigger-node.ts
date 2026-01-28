@@ -68,7 +68,7 @@ export const manualTriggerNodeSchema: NodeSchema = {
           checkType: 'custom',
           expected: { type: 'object' },
           errorMessage: 'Manual trigger requires no configuration',
-          severity: 'info',
+          severity: 'warning',
           rationale: 'Manual trigger works with empty parameters object',
           fix: 'No action needed - manual trigger is ready to use',
         },
@@ -77,10 +77,9 @@ export const manualTriggerNodeSchema: NodeSchema = {
   ],
 
   metadata: {
-    source: 'n8n_documentation_and_real_world_usage',
+    source: 'documentation',
     validatedDate: '2026-01-25T12:47:00+07:00',
     validatedBy: 'workflow_analysis',
     n8nVersion: '1.76.1',
-    notes: 'Most frequently used trigger node in test and UAT workflows. Zero configuration required.',
   },
 };

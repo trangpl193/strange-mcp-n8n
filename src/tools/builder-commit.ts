@@ -30,7 +30,7 @@ export async function builderCommit(
       McpErrorCode.INVALID_PARAMS,
       `Builder session '${input.session_id}' not found or expired`,
       {
-        details: {
+        data: {
           recovery_hint: 'Call builder_list to find active sessions',
         },
       }
@@ -42,90 +42,141 @@ export async function builderCommit(
       McpErrorCode.INVALID_PARAMS,
       `Builder session '${input.session_id}' has expired`,
       {
-        details: {
+        data: {
           recovery_hint: 'Call builder_resume to recreate session, then commit',
         },
       }
     );
   }
 
-  // Validate draft has at least one node
-  if (session.workflow_draft.nodes.length === 0) {
-    throw new McpError(
-      McpErrorCode.INVALID_PARAMS,
-      'Cannot commit empty workflow. Add at least one node first.',
-      {
-        details: {
-          recovery_hint: 'Call builder_add_node to add nodes',
-        },
-      }
-    );
-  }
+  try {
+    // Validate draft has at least one node
+    if (session.workflow_draft.nodes.length === 0) {
+      throw new McpError(
+        McpErrorCode.INVALID_PARAMS,
+        'Cannot commit empty workflow. Add at least one node first.',
+        {
+          data: {
+            recovery_hint: 'Call builder_add_node to add nodes',
+          },
+        }
+      );
+    }
 
-  // Validate workflow has at least one trigger node
-  const triggerTypes = ['webhook', 'schedule', 'manual'];
-  const hasTrigger = session.workflow_draft.nodes.some(node => {
-    const baseType = node.type.replace('n8n-nodes-base.', '');
-    return baseType === 'webhook' || baseType === 'scheduleTrigger' || baseType === 'manualTrigger';
-  });
-
-  if (!hasTrigger) {
-    throw new McpError(
-      McpErrorCode.INVALID_PARAMS,
-      'Workflow must have at least one trigger node (webhook, schedule, or manual)',
-      {
-        details: {
-          availableTriggers: triggerTypes,
-          currentNodes: session.workflow_draft.nodes.map(n => n.type),
-          recovery_hint: 'Add a trigger node using builder_add_node with type webhook, schedule, or manual',
-        },
-      }
-    );
-  }
-
-  // Transform draft to N8N format
-  const n8nWorkflow = transformDraftToN8N(session);
-
-  // Create workflow in N8N (without 'active' - it's read-only in create API)
-  const createdWorkflow = await client.createWorkflow({
-    name: n8nWorkflow.name,
-    nodes: n8nWorkflow.nodes,
-    connections: n8nWorkflow.connections,
-    settings: n8nWorkflow.settings,
-  });
-
-  // If activation requested, update the workflow to activate it
-  let finalWorkflow = createdWorkflow;
-  if (input.activate) {
-    finalWorkflow = await client.updateWorkflow(createdWorkflow.id, {
-      active: true,
+    // Validate workflow has at least one trigger node
+    const triggerTypes = ['webhook', 'schedule', 'manual'];
+    const hasTrigger = session.workflow_draft.nodes.some(node => {
+      const baseType = node.type.replace('n8n-nodes-base.', '');
+      return baseType === 'webhook' || baseType === 'scheduleTrigger' || baseType === 'manualTrigger';
     });
+
+    if (!hasTrigger) {
+      throw new McpError(
+        McpErrorCode.INVALID_PARAMS,
+        'Workflow must have at least one trigger node (webhook, schedule, or manual)',
+        {
+          data: {
+            availableTriggers: triggerTypes,
+            currentNodes: session.workflow_draft.nodes.map(n => n.type),
+            recovery_hint: 'Add a trigger node using builder_add_node with type webhook, schedule, or manual',
+          },
+        }
+      );
+    }
+
+    // Transform draft to N8N format
+    const n8nWorkflow = transformDraftToN8N(session);
+
+    // Create workflow in N8N (without 'active' - it's read-only in create API)
+    const createdWorkflow = await client.createWorkflow({
+      name: n8nWorkflow.name,
+      nodes: n8nWorkflow.nodes,
+      connections: n8nWorkflow.connections,
+      settings: n8nWorkflow.settings,
+    });
+
+    // If activation requested, update the workflow to activate it
+    let finalWorkflow = createdWorkflow;
+    if (input.activate) {
+      finalWorkflow = await client.updateWorkflow(createdWorkflow.id, {
+        active: true,
+      });
+    }
+
+    // Mark session as committed and delete
+    session.status = 'committed';
+    session.operations_log.push({
+      operation: 'committed',
+      timestamp: new Date().toISOString(),
+      data: {
+        workflow_id: createdWorkflow.id,
+        nodes_count: n8nWorkflow.nodes.length,
+      },
+    });
+
+    // Delete session (it's committed)
+    await store.delete(input.session_id);
+
+    return {
+      success: true,
+      workflow: {
+        id: finalWorkflow.id,
+        name: finalWorkflow.name,
+        active: finalWorkflow.active,
+        nodes_count: finalWorkflow.nodes.length,
+      },
+      session_closed: true,
+    };
+  } catch (error) {
+    // Calculate retry count from operations_log
+    const retryCount = session.operations_log.filter(
+      (log) => log.operation === 'commit_failed'
+    ).length;
+
+    const timestamp = new Date().toISOString();
+
+    // Add commit_failed operation to log
+    session.operations_log.push({
+      operation: 'commit_failed',
+      timestamp,
+      data: {
+        error: error instanceof Error ? error.message : String(error),
+        retry_count: retryCount,
+      },
+    });
+
+    // Extend TTL by updating session (+30min)
+    await store.update(session);
+
+    // Prepare error details with recovery information
+    const errorDetails: Record<string, unknown> = {
+      session_id: input.session_id,
+      session_status: 'active',
+      ttl_extended: true,
+      retry_count: retryCount,
+      recovery_hint: 'Session kept alive. Fix the issue and retry builder_commit',
+      original_error: error instanceof Error ? error.message : String(error),
+    };
+
+    // Optional safety: warn if retry count >= 5
+    if (retryCount >= 5) {
+      errorDetails.retry_limit_warning = `High retry count (${retryCount}). Consider using builder_discard if issue persists.`;
+    }
+
+    // Preserve original error details if it's an McpError
+    if (error instanceof McpError && error.details) {
+      errorDetails.validation_details = error.details;
+    }
+
+    // Throw McpError with recovery details
+    throw new McpError(
+      error instanceof McpError ? error.code : McpErrorCode.INTERNAL_ERROR,
+      `Commit failed: ${error instanceof Error ? error.message : String(error)}`,
+      {
+        data: errorDetails,
+      }
+    );
   }
-
-  // Mark session as committed and delete
-  session.status = 'committed';
-  session.operations_log.push({
-    operation: 'committed',
-    timestamp: new Date().toISOString(),
-    details: {
-      workflow_id: createdWorkflow.id,
-      nodes_count: n8nWorkflow.nodes.length,
-    },
-  });
-
-  // Delete session (it's committed)
-  await store.delete(input.session_id);
-
-  return {
-    success: true,
-    workflow: {
-      id: finalWorkflow.id,
-      name: finalWorkflow.name,
-      active: finalWorkflow.active,
-      nodes_count: finalWorkflow.nodes.length,
-    },
-    session_closed: true,
-  };
 }
 
 /**
@@ -145,7 +196,7 @@ function transformDraftToN8N(session: BuilderSession): {
       McpErrorCode.INVALID_PARAMS,
       'builder_commit failed: Workflow name is missing or empty',
       {
-        details: {
+        data: {
           hint: 'This indicates a corrupted session. The workflow name should have been set by builder_start.',
           recovery: [
             'Call builder_discard to clean up this session',
@@ -198,7 +249,7 @@ function transformDraftToN8N(session: BuilderSession): {
       McpErrorCode.INVALID_PARAMS,
       `Invalid branching node configuration: ${branchingNodeValidation.error}`,
       {
-        details: {
+        data: {
           node: branchingNodeValidation.nodeName,
           expected: branchingNodeValidation.expected,
           actual: branchingNodeValidation.actual,
@@ -295,9 +346,10 @@ function validateBranchingNodes(
     if (baseType === 'if') {
       expectedOutputs = 2; // Always has true/false outputs
     } else if (baseType === 'switch') {
-      // Switch has rules + 1 fallback output
-      const rules = node.parameters?.rules?.rules;
-      expectedOutputs = rules ? rules.length + 1 : 2; // Default 2 if no rules
+      // Switch typeVersion 3.4 rules mode: outputs = rules.values.length (no separate fallback)
+      const parameters = node.parameters as Record<string, any> | undefined;
+      const rulesValues = parameters?.rules?.values as any[] | undefined;
+      expectedOutputs = rulesValues ? rulesValues.length : 2; // Default 2 if no rules
     }
 
     // Check if all output indices are covered (at least one connection per output)

@@ -1,5 +1,5 @@
 import { describe, test, expect } from '@jest/globals';
-import { ifNodeDefaults } from '../../../../src/schema/node-defaults/if-node.js';
+import { ifNodeDefaults } from '../../../src/schema/node-defaults/if-node.js';
 
 // Helper type for accessing conditions in tests
 type ResultWithConditions = Record<string, unknown> & {

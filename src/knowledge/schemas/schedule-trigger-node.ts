@@ -71,15 +71,7 @@ export const scheduleTriggerNodeSchema: NodeSchema = {
 
         complete: {
           mode: 'cronExpression',
-          cronExpression: '0 */6 * * *', // Every 6 hours
-          triggerTimes: {
-            mode: 'custom',
-          },
-        },
-
-        daily_cleanup: {
-          mode: 'cronExpression',
-          cronExpression: '0 2 * * *', // Daily at 2 AM
+          cronExpression: '0 2 * * *', // Daily at 2 AM with all trigger options
           triggerTimes: {
             mode: 'everyDay',
           },
@@ -150,12 +142,6 @@ export const scheduleTriggerNodeSchema: NodeSchema = {
 
         complete: {
           mode: 'interval',
-          interval: 6,
-          unit: 'hours',
-        },
-
-        hourly_check: {
-          mode: 'interval',
           interval: 1,
           unit: 'hours',
         },
@@ -194,11 +180,9 @@ export const scheduleTriggerNodeSchema: NodeSchema = {
   ],
 
   metadata: {
-    source: 'n8n_documentation_and_real_world_usage',
+    source: 'documentation',
     validatedDate: '2026-01-25T12:47:00+07:00',
     validatedBy: 'automation_workflows',
     n8nVersion: '1.76.1',
-    notes:
-      'Critical for automated workflows. Most usage: cron (60%), interval (35%), specific times (5%).',
   },
 };

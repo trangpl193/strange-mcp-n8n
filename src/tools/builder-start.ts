@@ -42,7 +42,7 @@ export async function builderStart(
       {
         operation: 'session_started',
         timestamp: now.toISOString(),
-        details: { name: input.name },
+        data: { name: input.name },
       },
     ],
     credentials: new Map(Object.entries(input.credentials || {})),
