@@ -1,6 +1,6 @@
 {
   "name": "strange-mcp-n8n",
-  "version": "1.3.1",
+  "version": "1.4.2",
   "description": "MCP server for N8N workflow development and operations",
   "type": "module",
   "main": "dist/index.js",
