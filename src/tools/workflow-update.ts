@@ -14,6 +14,11 @@ export interface WorkflowUpdateInput {
   // Option 2: Direct N8N JSON update (advanced)
   workflow_json?: Partial<N8NWorkflow>;
 
+  // Option 2.5: Direct node/connection update (for node deletion/modification)
+  nodes_json?: string;  // JSON string of N8N nodes array
+  connections_json?: string;  // JSON string of N8N connections object
+  name?: string;  // Optional name override for direct node updates
+
   // Option 3: Quick operations
   activate?: boolean;
   rename?: string;
@@ -37,6 +42,7 @@ export interface WorkflowUpdateOutput {
 function validateUpdateStrategy(input: WorkflowUpdateInput): void {
   const hasWorkflow = !!input.workflow;
   const hasWorkflowJson = !!input.workflow_json;
+  const hasDirectNodeUpdate = !!(input.nodes_json || input.connections_json);
   const hasQuickOps = !!(
     input.activate !== undefined ||
     input.rename ||
@@ -44,7 +50,7 @@ function validateUpdateStrategy(input: WorkflowUpdateInput): void {
     input.remove_tags?.length
   );
 
-  const strategyCount = [hasWorkflow, hasWorkflowJson, hasQuickOps].filter(Boolean).length;
+  const strategyCount = [hasWorkflow, hasWorkflowJson, hasDirectNodeUpdate, hasQuickOps].filter(Boolean).length;
 
   // Error: No strategy provided
   if (strategyCount === 0) {
@@ -73,6 +79,7 @@ function validateUpdateStrategy(input: WorkflowUpdateInput): void {
     const providedStrategies = [];
     if (hasWorkflow) providedStrategies.push('workflow');
     if (hasWorkflowJson) providedStrategies.push('workflow_json');
+    if (hasDirectNodeUpdate) providedStrategies.push('direct node update');
     if (hasQuickOps) providedStrategies.push('quick operations');
 
     throw new McpError(
@@ -84,6 +91,7 @@ function validateUpdateStrategy(input: WorkflowUpdateInput): void {
           provided_parameters: {
             workflow: hasWorkflow,
             workflow_json: hasWorkflowJson,
+            direct_node_update: hasDirectNodeUpdate,
             quick_ops: hasQuickOps,
           },
         },
@@ -131,6 +139,54 @@ function validateUpdateStrategy(input: WorkflowUpdateInput): void {
       );
     }
   }
+
+  if (hasDirectNodeUpdate) {
+    // Validation for direct node update strategy
+    if (!input.nodes_json && !input.connections_json) {
+      throw new McpError(
+        McpErrorCode.INVALID_PARAMS,
+        'Direct node update requires at least nodes_json or connections_json',
+        {
+          data: {
+            hint: 'Provide nodes_json (JSON array) and/or connections_json (JSON object)',
+          },
+        }
+      );
+    }
+    // Validate JSON format if provided
+    if (input.nodes_json) {
+      try {
+        JSON.parse(input.nodes_json);
+      } catch (e) {
+        throw new McpError(
+          McpErrorCode.INVALID_PARAMS,
+          'nodes_json must be valid JSON',
+          {
+            data: {
+              hint: 'Ensure nodes_json is a valid JSON array string',
+              error: e.message,
+            },
+          }
+        );
+      }
+    }
+    if (input.connections_json) {
+      try {
+        JSON.parse(input.connections_json);
+      } catch (e) {
+        throw new McpError(
+          McpErrorCode.INVALID_PARAMS,
+          'connections_json must be valid JSON',
+          {
+            data: {
+              hint: 'Ensure connections_json is a valid JSON object string',
+              error: e.message,
+            },
+          }
+        );
+      }
+    }
+  }
 }
 
 /**
@@ -141,6 +197,7 @@ function validateUpdateStrategy(input: WorkflowUpdateInput): void {
  *
  * 1. Full replacement with simplified schema (workflow + credentials)
  * 2. Direct N8N JSON update (workflow_json)
+ * 2.5. Direct node/connection update (nodes_json + connections_json) - for node deletion/modification
  * 3. Quick operations (activate, rename, add_tags)
  */
 export async function workflowUpdate(
@@ -196,6 +253,15 @@ export async function workflowUpdate(
     // Remove read-only fields from the payload
     delete updatedWorkflow.active;
     delete updatedWorkflow.tags;
+  }
+  // Strategy 2.5: Direct node/connection update (for node deletion/modification)
+  else if (input.nodes_json || input.connections_json) {
+    updatedWorkflow = {
+      name: input.name || currentWorkflow.name,
+      nodes: input.nodes_json ? JSON.parse(input.nodes_json) : currentWorkflow.nodes,
+      connections: input.connections_json ? JSON.parse(input.connections_json) : currentWorkflow.connections,
+      settings: currentWorkflow.settings,
+    };
   }
   // Strategy 3: Quick operations
   else {
