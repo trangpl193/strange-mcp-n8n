@@ -17,6 +17,7 @@ import type {
 import { BUILDER_CONSTANTS } from '../services/builder-types.js';
 // import { applyNodeDefaults } from '../schema/index.js'; // TODO: Implement this function
 import { schema_validate, quirks_check } from '../knowledge/index.js';
+import { loadTemplate, fillTemplate } from '../helpers/note-crud.js';
 
 export async function builderAddNode(
   input: BuilderAddNodeInput
@@ -57,7 +58,7 @@ export async function builderAddNode(
       `Unknown node type '${input.node.type}'`,
       {
         data: {
-          supported_types: ['webhook', 'schedule', 'manual', 'http', 'postgres', 'discord', 'code', 'if', 'switch', 'merge', 'set', 'respond'],
+          supported_types: ['webhook', 'schedule', 'manual', 'http', 'postgres', 'discord', 'code', 'if', 'switch', 'merge', 'set', 'respond', 'stickyNote'],
         },
       }
     );
@@ -217,6 +218,10 @@ function getNodeCategory(nodeType: string): 'trigger' | 'action' | 'branching' {
 
   if (['switch', 'if', 'filter'].includes(baseType)) {
     return 'branching';
+  }
+
+  if (['stickyNote'].includes(baseType)) {
+    return 'action'; // Sticky notes are documentation/action nodes
   }
 
   return 'action';
@@ -421,6 +426,20 @@ function buildParameters(
       // Apply typeVersion 3.4 format (rules mode with condition IDs or expression mode with numberOutputs)
       // See docs/SWITCH_NODE_FORMATS.md for format requirements
       params = applySwitchNodeV3Format(params);
+      break;
+
+    case 'stickyNote':
+      // Support template expansion for documentation notes
+      if (config.template && config.template_variables) {
+        const template = loadTemplate(config.template as 'changelog' | 'usage' | 'architecture');
+        params.content = fillTemplate(template, config.template_variables as Record<string, string>);
+      } else if (config.content) {
+        params.content = config.content;
+      }
+
+      // Size parameters
+      if (config.height) params.height = config.height;
+      if (config.width) params.width = config.width;
       break;
   }
 

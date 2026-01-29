@@ -167,6 +167,9 @@ export async function initializeCoreSchemas(): Promise<void> {
   const { setNodeSchema } = await import('../schemas/set-node.js');
   const { mergeNodeSchema } = await import('../schemas/merge-node.js');
 
+  // Import schemas - Documentation nodes
+  const { stickyNoteSchema } = await import('../schemas/stickynote-node.js');
+
   // Import quirks
   const { ifNodeQuirks } = await import('../quirks/if-node.js');
 
@@ -192,8 +195,11 @@ export async function initializeCoreSchemas(): Promise<void> {
   schemaRegistry.registerSchema(setNodeSchema);
   schemaRegistry.registerSchema(mergeNodeSchema);
 
+  // Register schemas - Documentation nodes
+  schemaRegistry.registerSchema(stickyNoteSchema);
+
   // Register quirks
   ifNodeQuirks.forEach((quirk) => schemaRegistry.registerQuirk(quirk));
 
-  console.log('✅ Knowledge Layer initialized: 12 schemas, 1 quirk registered');
+  console.log('✅ Knowledge Layer initialized: 13 schemas, 1 quirk registered');
 }

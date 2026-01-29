@@ -69,6 +69,25 @@ export type {
   NodeUpdateOutput,
 } from './node-update.js';
 
+// Note operations (Phase 1.5: Documentation Notes)
+export { noteCreate } from './note-create.js';
+export type {
+  NoteCreateInput,
+  NoteCreateOutput,
+} from './note-create.js';
+
+export { noteUpdate } from './note-update.js';
+export type {
+  NoteUpdateInput,
+  NoteUpdateOutput,
+} from './note-update.js';
+
+export { noteDelete } from './note-delete.js';
+export type {
+  NoteDeleteInput,
+  NoteDeleteOutput,
+} from './note-delete.js';
+
 // ========================================
 // Builder Pattern (Phase 2A: Stateful Workflow Builder)
 // ========================================

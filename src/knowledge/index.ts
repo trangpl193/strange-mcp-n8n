@@ -41,6 +41,7 @@ export { postgresNodeSchema } from './schemas/postgres-node.js';
 export { manualTriggerNodeSchema } from './schemas/manual-trigger-node.js';
 export { scheduleTriggerNodeSchema } from './schemas/schedule-trigger-node.js';
 export { mergeNodeSchema } from './schemas/merge-node.js';
+export { stickyNoteSchema } from './schemas/stickynote-node.js';
 
 // Quirks
 export { ifNodeQuirks, ifNodeDualFormatQuirk } from './quirks/if-node.js';

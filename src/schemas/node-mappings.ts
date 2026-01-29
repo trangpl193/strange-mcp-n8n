@@ -6,7 +6,7 @@
 export interface NodeMapping {
   n8nType: string;
   typeVersion: number;
-  category: 'trigger' | 'action' | 'logic' | 'transform';
+  category: 'trigger' | 'action' | 'logic' | 'transform' | 'documentation';
   defaultParams?: Record<string, any>;
 }
 
@@ -107,6 +107,18 @@ export const NODE_MAPPINGS: Record<string, NodeMapping> = {
       mode: 'runOnceForAllItems',
     },
   },
+
+  // Documentation
+  stickynote: {
+    n8nType: 'n8n-nodes-base.stickyNote',
+    typeVersion: 1,
+    category: 'documentation',
+    defaultParams: {
+      content: '## Documentation\n\nAdd your notes here...',
+      height: 300,
+      width: 400,
+    },
+  },
 };
 
 /**
@@ -137,6 +149,7 @@ export function getDefaultNodeName(simplifiedType: string): string {
     merge: 'Merge',
     set: 'Set',
     code: 'Code',
+    stickynote: 'Note',
   };
 
   return nameMap[type] || type.charAt(0).toUpperCase() + type.slice(1);

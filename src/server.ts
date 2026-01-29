@@ -14,6 +14,9 @@ import {
   workflowValidateRender,
   executionList,
   executionDebug,
+  noteCreate,
+  noteUpdate,
+  noteDelete,
   type WorkflowListInput,
   type WorkflowCreateInput,
   type WorkflowGetInput,
@@ -21,6 +24,9 @@ import {
   type WorkflowValidateRenderInput,
   type ExecutionListInput,
   type ExecutionDebugInput,
+  type NoteCreateInput,
+  type NoteUpdateInput,
+  type NoteDeleteInput,
 } from './tools/index.js';
 import { knowledgeLayerTools } from './knowledge/index.js';
 import {
@@ -282,6 +288,105 @@ export class N8NMCPServer {
             required: ['execution_id'],
           },
         },
+        // Note tools (Phase 1.5: Documentation Notes)
+        {
+          name: 'note_create',
+          description: 'Create a documentation note (sticky note) in a workflow. Use templates (changelog, usage, architecture) or provide custom content.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              workflow_id: {
+                type: 'string',
+                description: 'Workflow ID',
+              },
+              name: {
+                type: 'string',
+                description: 'Note name (default: "Note")',
+              },
+              template: {
+                type: 'string',
+                enum: ['changelog', 'usage', 'architecture'],
+                description: 'Template to use (optional)',
+              },
+              template_variables: {
+                type: 'object',
+                description: 'Variables for template substitution (required if template specified)',
+              },
+              content: {
+                type: 'string',
+                description: 'Direct content (use if not using template)',
+              },
+              position: {
+                type: 'array',
+                description: 'Note position [x, y] (optional, auto-calculated)',
+                items: {
+                  type: 'number',
+                },
+                minItems: 2,
+                maxItems: 2,
+              },
+              height: {
+                type: 'number',
+                description: 'Note height in pixels (default: 300)',
+                default: 300,
+              },
+              width: {
+                type: 'number',
+                description: 'Note width in pixels (default: 400)',
+                default: 400,
+              },
+            },
+            required: ['workflow_id'],
+          },
+        },
+        {
+          name: 'note_update',
+          description: 'Update an existing documentation note (sticky note). Only specified fields will be updated.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              workflow_id: {
+                type: 'string',
+                description: 'Workflow ID',
+              },
+              note_name: {
+                type: 'string',
+                description: 'Name of the note to update',
+              },
+              content: {
+                type: 'string',
+                description: 'New content (merged with existing)',
+              },
+              height: {
+                type: 'number',
+                description: 'New height in pixels',
+              },
+              width: {
+                type: 'number',
+                description: 'New width in pixels',
+              },
+            },
+            required: ['workflow_id', 'note_name'],
+          },
+        },
+        {
+          name: 'note_delete',
+          description: 'Delete a documentation note (sticky note) from a workflow. Cannot be undone.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              workflow_id: {
+                type: 'string',
+                description: 'Workflow ID',
+              },
+              note_name: {
+                type: 'string',
+                description: 'Name of the note to delete',
+              },
+            },
+            required: ['workflow_id', 'note_name'],
+          },
+        },
         // Knowledge layer tools
         ...knowledgeLayerTools,
       ],
@@ -433,6 +538,46 @@ export class N8NMCPServer {
             const rawArgs = args as unknown as { executionId: string };
             const input: ExecutionDebugInput = { execution_id: rawArgs.executionId };
             const result = await executionDebug(this.client, input);
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(result, null, 2),
+                },
+              ],
+            };
+          }
+
+          // Note tools (Phase 1.5: Documentation Notes)
+          case 'note_create': {
+            const input = args as NoteCreateInput;
+            const result = await noteCreate(this.client, input);
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(result, null, 2),
+                },
+              ],
+            };
+          }
+
+          case 'note_update': {
+            const input = args as NoteUpdateInput;
+            const result = await noteUpdate(this.client, input);
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(result, null, 2),
+                },
+              ],
+            };
+          }
+
+          case 'note_delete': {
+            const input = args as NoteDeleteInput;
+            const result = await noteDelete(this.client, input);
             return {
               content: [
                 {

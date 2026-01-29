@@ -66,8 +66,17 @@ export async function builderCommit(
     // Validate workflow has at least one trigger node
     const triggerTypes = ['webhook', 'schedule', 'manual'];
     const hasTrigger = session.workflow_draft.nodes.some(node => {
-      const baseType = node.type.replace('n8n-nodes-base.', '');
-      return baseType === 'webhook' || baseType === 'scheduleTrigger' || baseType === 'manualTrigger';
+      // Check simplified type (what builder uses) OR n8n_type if set
+      const simplifiedType = node.type.toLowerCase();
+      const n8nType = node.n8n_type || '';
+      const baseType = n8nType.replace('n8n-nodes-base.', '');
+
+      return simplifiedType === 'webhook' ||
+             simplifiedType === 'schedule' ||
+             simplifiedType === 'manual' ||
+             baseType === 'webhook' ||
+             baseType === 'scheduleTrigger' ||
+             baseType === 'manualTrigger';
     });
 
     if (!hasTrigger) {
